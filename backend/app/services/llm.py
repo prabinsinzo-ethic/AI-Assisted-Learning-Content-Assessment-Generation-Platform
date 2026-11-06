@@ -25,11 +25,11 @@ def client() -> OpenAI:
 
 
 @lru_cache(maxsize=512)
-def _cached_chat(prompt: str, system: str, json_mode: bool, temperature: float) -> str:
+def _cached_chat(prompt: str, system: str, json_mode: bool, temperature: float, model: str) -> str:
     if MOCK_LLM or not OPENAI_API_KEY:
         logger.debug("Using mock LLM response")
         return _mock_chat(prompt, json_mode)
-    kwargs = {"model": LLM_MODEL, "messages": [], "temperature": temperature}
+    kwargs = {"model": model, "messages": [], "temperature": temperature}
     msgs = []
     if system:
         msgs.append({"role": "system", "content": system})
@@ -37,17 +37,18 @@ def _cached_chat(prompt: str, system: str, json_mode: bool, temperature: float) 
     kwargs["messages"] = msgs
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
-    logger.debug("LLM call model=%s json_mode=%s", LLM_MODEL, json_mode)
+    logger.debug("LLM call model=%s json_mode=%s", model, json_mode)
     resp = client().chat.completions.create(**kwargs)
     return resp.choices[0].message.content or ""
 
 
-def chat(prompt: str, system: str = "", json_mode: bool = False, temperature: float = 0.7) -> str:
-    return _cached_chat(prompt, system, json_mode, temperature)
+def chat(prompt: str, system: str = "", json_mode: bool = False, temperature: float = 0.7, model: str = None) -> str:
+    model = model or LLM_MODEL
+    return _cached_chat(prompt, system, json_mode, temperature, model)
 
 
-def chat_json(prompt: str, system: str = "", temperature: float = 0.7) -> Dict[str, Any]:
-    raw = chat(prompt, system=system, json_mode=True, temperature=temperature)
+def chat_json(prompt: str, system: str = "", temperature: float = 0.7, model: str = None) -> Dict[str, Any]:
+    raw = chat(prompt, system=system, json_mode=True, temperature=temperature, model=model)
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
@@ -58,11 +59,11 @@ def chat_json(prompt: str, system: str = "", temperature: float = 0.7) -> Dict[s
         raise
 
 
-def chat_json_with_retry(prompt: str, system: str = "", validate=None, max_retries: int = 3, temperature: float = 0.7) -> Dict[str, Any]:
+def chat_json_with_retry(prompt: str, system: str = "", validate=None, max_retries: int = 3, temperature: float = 0.7, model: str = None) -> Dict[str, Any]:
     last_err = None
     cur_prompt = prompt
     for attempt in range(max_retries):
-        raw = chat(cur_prompt, system=system, json_mode=True, temperature=temperature)
+        raw = chat(cur_prompt, system=system, json_mode=True, temperature=temperature, model=model)
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:

@@ -8,7 +8,7 @@ from .db import init_db
 init_db()
 
 from .logging_config import setup_logging, get_logger
-from .routers import documents, generation, items, auth, qc, export, studies, analysis
+from .routers import documents, generation, items, auth, qc, export, studies, analysis, stats
 
 setup_logging()
 logger = get_logger("app.main")
@@ -41,6 +41,7 @@ app.include_router(qc.router)
 app.include_router(export.router)
 app.include_router(studies.router)
 app.include_router(analysis.router)
+app.include_router(stats.router)
 
 
 @app.on_event("startup")

@@ -111,6 +111,7 @@ class GenerateRequest(BaseModel):
     types: List[str] = ["summary"]
     items_per_chunk: int = 1
     bloom_distribution: Optional[Dict[str, float]] = None
+    token_budget: Optional[int] = None
 
 
 class JobStatus(BaseModel):

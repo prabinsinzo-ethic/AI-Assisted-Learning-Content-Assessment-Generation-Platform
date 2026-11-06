@@ -33,13 +33,22 @@ def _run_job(job_id: str, db_factory):
         db.commit()
         total = len(types) or 1
         results = []
+        from ..models import Chunk
         for idx, t in enumerate(types):
-            # cancellation check
             db.refresh(job)
             if job.cancel_requested:
                 job.status = "cancelled"
                 db.commit()
                 return
+            # token budget check
+            if job.token_budget:
+                doc_chunks = db.query(Chunk).filter(Chunk.document_id == job.document_id).all()
+                est = sum(c.token_count for c in doc_chunks) * items_per_chunk
+                if (job.tokens_used or 0) + est > job.token_budget:
+                    job.status = "failed"
+                    job.message = "Token budget exceeded"
+                    db.commit()
+                    return
             gen, needs_items = GENERATORS.get(t, (None, False))
             if gen is None:
                 continue
@@ -50,6 +59,10 @@ def _run_job(job_id: str, db_factory):
             results.extend(ids)
             job.result_ids = __import__("json").dumps(results)
             job.progress = (idx + 1) / total
+            # update tokens used estimate
+            if job.token_budget:
+                doc_chunks = db.query(Chunk).filter(Chunk.document_id == job.document_id).all()
+                job.tokens_used = (job.tokens_used or 0) + sum(c.token_count for c in doc_chunks) * items_per_chunk
             db.commit()
         job.progress = 1.0
         job.status = "done"
@@ -73,6 +86,7 @@ def trigger_generate(req: GenerateRequest, bg: BackgroundTasks, db: Session = De
         document_id=req.document_id,
         requested_types=json.dumps(req.types),
         params=json.dumps({"items_per_chunk": req.items_per_chunk, "bloom_distribution": req.bloom_distribution}),
+        token_budget=req.token_budget,
         status="queued",
         progress=0.0,
     )

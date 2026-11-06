@@ -89,6 +89,8 @@ class GenerationJob(Base):
     message = Column(Text)
     result_ids = Column(Text, default="[]")
     cancel_requested = Column(Integer, default=0)
+    token_budget = Column(Integer)
+    tokens_used = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

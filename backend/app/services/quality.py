@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..models import ContentItem, Chunk
 from ..services.llm import chat_json, embed, cosine as cos_sim
+from ..config import LLM_MODEL_CHEAP
 from ..logging_config import get_logger
 
 logger = get_logger("app.quality")
@@ -20,7 +21,7 @@ def _extract_claims(text: str) -> List[str]:
         f"Text:\n{text}"
     )
     try:
-        data = chat_json(prompt, system="You extract atomic factual claims.")
+        data = chat_json(prompt, system="You extract atomic factual claims.", model=LLM_MODEL_CHEAP)
         claims = data.get("claims", [])
         if not isinstance(claims, list):
             claims = []
@@ -38,7 +39,7 @@ def _entailment_score(claim: str, source: str) -> float:
         f"SOURCE:\n{source}\n\nCLAIM:\n{claim}\n\nRespond JSON only."
     )
     try:
-        data = chat_json(prompt, system="You are a strict fact-checker.")
+        data = chat_json(prompt, system="You are a strict fact-checker.", model=LLM_MODEL_CHEAP)
         score = float(data.get("score", 0.0))
         return max(0.0, min(1.0, score))
     except Exception as e:
@@ -173,7 +174,7 @@ def check_consistency(item: ContentItem, db: Session) -> Dict[str, Any]:
         f"SOURCE:\n{source}\n\nQUESTION:\n{question}"
     )
     try:
-        data = chat_json(prompt, system="You answer strictly from the source.")
+        data = chat_json(prompt, system="You answer strictly from the source.", model=LLM_MODEL_CHEAP)
         regenerated = data.get("answer", "")
     except Exception as e:
         logger.warning("Consistency regeneration failed: %s", e)
@@ -185,7 +186,7 @@ def check_consistency(item: ContentItem, db: Session) -> Dict[str, Any]:
         f"STORED: {stored}\nREGENERATED: {regenerated}"
     )
     try:
-        j = chat_json(judge_prompt, system="You compare answers for consistency.")
+        j = chat_json(judge_prompt, system="You compare answers for consistency.", model=LLM_MODEL_CHEAP)
         consistent = bool(j.get("consistent", False))
         reason = j.get("reason", "")
     except Exception as e:
@@ -219,7 +220,7 @@ def score_quality(item: ContentItem) -> Dict[str, Any]:
         "Return JSON: {\"quality_score\": 1-5, \"clarity\": 1-5, \"relevance\": 1-5, \"difficulty\": 1-5, \"passed\": true/false}."
     )
     try:
-        data = chat_json(prompt, system="You are a strict assessment quality reviewer.")
+        data = chat_json(prompt, system="You are a strict assessment quality reviewer.", model=LLM_MODEL_CHEAP)
         qs = int(data.get("quality_score", 3))
         qs = max(1, min(5, qs))
         clarity = int(data.get("clarity", qs))
@@ -313,7 +314,7 @@ def classify_bloom(text: str) -> Dict[str, Any]:
         "Return JSON: {\"bloom_level\": \"...\", \"confidence\": 0.0-1.0}."
     )
     try:
-        data = chat_json(prompt, system="You are an expert in Bloom's Taxonomy.")
+        data = chat_json(prompt, system="You are an expert in Bloom's Taxonomy.", model=LLM_MODEL_CHEAP)
         level = data.get("bloom_level", "Understand")
         if level not in BLOOM_LEVELS:
             level = "Understand"
@@ -342,7 +343,7 @@ def detect_ambiguity(item: ContentItem) -> Dict[str, Any]:
         "Return JSON: {\"ambiguity_score\": 1-5 (1=clear, 5=very ambiguous), \"issues\": [\"...\"]}."
     )
     try:
-        data = chat_json(prompt, system="You are a strict assessment reviewer.")
+        data = chat_json(prompt, system="You are a strict assessment reviewer.", model=LLM_MODEL_CHEAP)
         score = int(data.get("ambiguity_score", 3))
         score = max(1, min(5, score))
         issues = data.get("issues", [])
