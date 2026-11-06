@@ -20,7 +20,7 @@ with st.sidebar:
         os.environ["API_URL"] = api_url
         API = api_url
 
-tab_docs, tab_review, tab_items, tab_qc = st.tabs(["Documents", "Review Queue", "Items", "Quality Control"])
+tab_docs, tab_review, tab_items, tab_qc, tab_study = st.tabs(["Documents", "Review Queue", "Items", "Quality Control", "Rating Study"])
 
 # --- Documents tab ---
 with tab_docs:
@@ -197,3 +197,58 @@ with tab_qc:
     if st.button("Run Full QC Pipeline"):
         r = requests.post(f"{API}/qc/run", json={"document_id": qdoc, "max_retries": 1})
         st.json(r.json())
+
+
+# --- Rating Study tab ---
+with tab_study:
+    st.subheader("Blind Rating Study")
+    study_id = st.number_input("Study ID", min_value=1, value=1, key="study_id")
+    rater_id = st.number_input("Rater ID", min_value=1, value=1, key="rater_id")
+    if st.button("Load pairs"):
+        r = requests.get(f"{API}/studies/{study_id}/pairs", params={"rater_id": rater_id})
+        if r.ok:
+            st.session_state["study_pairs"] = r.json()["pairs"]
+            st.success(f"Loaded {len(r.json()['pairs'])} pairs")
+        else:
+            st.error(r.text)
+    pairs = st.session_state.get("study_pairs", [])
+    for pair in pairs:
+        st.markdown(f"### Pair {pair['pair_id']}")
+        colA, colB = st.columns(2)
+        with colA:
+            st.markdown("**Item A**")
+            st.json(pair["A"]["payload"])
+        with colB:
+            st.markdown("**Item B**")
+            st.json(pair["B"]["payload"])
+        for label in ["A", "B"]:
+            item_id = pair[label]["item_id"]
+            with st.expander(f"Rate Item {label} (id {item_id})"):
+                accuracy = st.slider("Accuracy", 1, 5, 3, key=f"acc_{pair['pair_id']}_{label}")
+                clarity = st.slider("Clarity", 1, 5, 3, key=f"clar_{pair['pair_id']}_{label}")
+                difficulty = st.slider("Difficulty appropriateness", 1, 5, 3, key=f"diff_{pair['pair_id']}_{label}")
+                distractor = st.slider("Distractor quality", 1, 5, 3, key=f"dist_{pair['pair_id']}_{label}")
+                bloom = st.slider("Bloom alignment", 1, 5, 3, key=f"bloom_{pair['pair_id']}_{label}")
+                overall = st.slider("Overall quality", 1, 5, 3, key=f"ov_{pair['pair_id']}_{label}")
+                would_use = st.slider("Would use (1=no,5=yes)", 1, 5, 3, key=f"use_{pair['pair_id']}_{label}")
+                comments = st.text_input("Comments", key=f"com_{pair['pair_id']}_{label}")
+                if st.button("Submit rating", key=f"sub_{pair['pair_id']}_{label}"):
+                    payload = {
+                        "rater_id": rater_id,
+                        "pair_id": pair["pair_id"],
+                        "blinded_label": label,
+                        "item_id": item_id,
+                        "accuracy": accuracy,
+                        "clarity": clarity,
+                        "difficulty": difficulty,
+                        "distractor_quality": distractor,
+                        "bloom_alignment": bloom,
+                        "overall": overall,
+                        "would_use": would_use,
+                        "comments": comments,
+                    }
+                    r = requests.post(f"{API}/studies/{study_id}/ratings", json=payload)
+                    if r.ok:
+                        st.success("Rating submitted")
+                    else:
+                        st.error(r.text)
