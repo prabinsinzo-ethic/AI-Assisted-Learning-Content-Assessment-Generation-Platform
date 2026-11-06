@@ -6,7 +6,11 @@ from typing import List, Optional
 
 from ..db import get_db
 from ..models import ContentItem
-from ..services.quality import verify_item_factual, detect_duplicates, detect_ambiguity, classify_item_bloom, heuristic_filter, score_quality, check_consistency
+from ..services.quality import (
+    verify_item_factual, detect_duplicates, detect_ambiguity,
+    classify_item_bloom, heuristic_filter, score_quality,
+    check_consistency, run_qc_pipeline,
+)
 
 router = APIRouter(prefix="/qc", tags=["qc"])
 
@@ -39,6 +43,16 @@ class HeuristicRequest(BaseModel):
 class QualityRequest(BaseModel):
     document_id: int
     item_ids: Optional[List[int]] = None
+
+
+class ConsistencyRequest(BaseModel):
+    document_id: int
+    item_ids: Optional[List[int]] = None
+
+
+class QCRunRequest(BaseModel):
+    document_id: int
+    max_retries: int = 2
 
 
 @router.post("/verify")
@@ -131,11 +145,6 @@ def quality_score(req: QualityRequest, db: Session = Depends(get_db)):
     return {"scored": len(results), "results": results}
 
 
-class ConsistencyRequest(BaseModel):
-    document_id: int
-    item_ids: Optional[List[int]] = None
-
-
 @router.post("/consistency")
 def consistency(req: ConsistencyRequest, db: Session = Depends(get_db)):
     q = db.query(ContentItem).filter(ContentItem.document_id == req.document_id)
@@ -151,3 +160,9 @@ def consistency(req: ConsistencyRequest, db: Session = Depends(get_db)):
         db.commit()
         results.append({"item_id": it.id, "item_type": it.item_type, **res})
     return {"checked": len(results), "results": results}
+
+
+@router.post("/run")
+def run_pipeline(req: QCRunRequest, db: Session = Depends(get_db)):
+    result = run_qc_pipeline(db, req.document_id, req.max_retries)
+    return result

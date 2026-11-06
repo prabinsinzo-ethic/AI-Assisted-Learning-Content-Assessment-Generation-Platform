@@ -85,6 +85,68 @@ def verify_item_factual(item: ContentItem, db: Session) -> Dict[str, Any]:
     }
 
 
+def run_qc_pipeline(db: Session, document_id: int, max_retries: int = 2) -> Dict[str, Any]:
+    from .generation import regenerate_item
+    items = db.query(ContentItem).filter(ContentItem.document_id == document_id).all()
+    summary = {"total": len(items), "passed": 0, "regenerated": 0, "rejected": 0, "duplicate_pairs": 0}
+    for it in items:
+        if it.item_type == "answer_key":
+            # still run heuristics
+            hr = heuristic_filter(it)
+            details = json.loads(it.qc_details or "{}")
+            details["heuristics"] = hr
+            it.qc_details = json.dumps(details)
+            db.commit()
+            if hr["passed"]:
+                summary["passed"] += 1
+            else:
+                it.status = "rejected"
+                summary["rejected"] += 1
+            continue
+        passed = False
+        for attempt in range(max_retries + 1):
+            gr = verify_item_factual(it, db)
+            am = detect_ambiguity(it)
+            hr = heuristic_filter(it)
+            bl = classify_item_bloom(it)
+            qs = score_quality(it)
+            details = {
+                "grounding": gr,
+                "ambiguity": am,
+                "heuristics": hr,
+                "bloom": bl,
+                "llm_quality": qs,
+            }
+            it.qc_details = json.dumps(details)
+            it.quality_score = gr["grounding_score"]
+            db.commit()
+            passed = gr["passed"] and am["passed"] and hr["passed"] and qs["passed"]
+            if passed:
+                break
+            if attempt < max_retries:
+                try:
+                    regenerate_item(db, it)
+                    summary["regenerated"] += 1
+                except Exception as e:
+                    logger.warning("Regeneration failed for item %s: %s", it.id, e)
+                    break
+            else:
+                it.status = "rejected"
+        if passed:
+            if it.status != "rejected":
+                it.status = "draft"
+            summary["passed"] += 1
+        else:
+            if it.status != "rejected":
+                it.status = "rejected"
+            summary["rejected"] += 1
+        db.commit()
+    # dedup
+    dups = detect_duplicates(db, document_id, 0.85)
+    summary["duplicate_pairs"] = len(dups)
+    return summary
+
+
 def check_consistency(item: ContentItem, db: Session) -> Dict[str, Any]:
     p = item.payload_obj()
     chunks = [db.query(Chunk).get(cid) for cid in item.chunk_id_list()]

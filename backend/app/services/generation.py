@@ -297,6 +297,37 @@ def generate_answer_keys(db: Session, document_id: int) -> List[int]:
     return created_ids
 
 
+VALIDATORS = {
+    "summary": lambda d: SummaryPayload(**d),
+    "flashcard": lambda d: FlashcardPayload(**d),
+    "mcq": lambda d: MCQPayload(**d),
+    "short_answer": lambda d: ShortAnswerPayload(**d),
+}
+
+
+def regenerate_item(db: Session, item: ContentItem) -> ContentItem:
+    if item.item_type == "answer_key":
+        return item
+    chunk_ids = item.chunk_id_list()
+    chunk = db.query(Chunk).get(chunk_ids[0]) if chunk_ids else None
+    section = chunk.section if chunk else ""
+    text = chunk.text if chunk else ""
+    tmpl = render(load_template(item.item_type), section=section or "", chunk_text=text)
+    validate = VALIDATORS.get(item.item_type)
+    payload = chat_json_with_retry(tmpl["user"], system=tmpl["system"], validate=validate)
+    item.payload = json.dumps(payload)
+    item.version = (item.version or 1) + 1
+    item.created_by = "ai"
+    item.model = LLM_MODEL
+    item.prompt_version = "1.0"
+    item.temperature = 0.7
+    item.status = "draft"
+    db.commit()
+    db.refresh(item)
+    logger.info("Regenerated item %s (v%s)", item.id, item.version)
+    return item
+
+
 def generate_summaries(db: Session, document_id: int, items_per_chunk: int = 1) -> List[int]:
     doc = db.query(Document).get(document_id)
     if not doc:
