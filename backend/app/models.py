@@ -59,6 +59,7 @@ class ContentItem(Base):
     payload = Column(Text, nullable=False)
     bloom_level = Column(String(50))
     quality_score = Column(Float)
+    qc_details = Column(Text)  # JSON
     status = Column(String(50), default="draft")
     version = Column(Integer, default=1)
     created_by = Column(String(50), default="ai")

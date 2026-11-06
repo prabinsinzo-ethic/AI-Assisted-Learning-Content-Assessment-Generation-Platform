@@ -107,7 +107,12 @@ def chat_json_with_retry(prompt: str, system: str = "", validate=None, max_retri
 
 def _mock_chat(prompt: str, json_mode: bool) -> str:
     # Minimal mock responses for testing without API key
-    if "summary" in prompt.lower():
+    low = prompt.lower()
+    if "atomic factual claims" in low:
+        return json.dumps({"claims": ["The source states the main concept."]})
+    if "supports/entails" in low or "fact-checker" in low:
+        return json.dumps({"score": 0.9})
+    if "summary" in low:
         return json.dumps({"summary": "This is a mock summary of the provided content.", "key_points": ["Point A", "Point B"]}) if json_mode else "Mock summary."
     if "flashcard" in prompt.lower():
         return json.dumps({"front": "What is X?", "back": "X is Y."})
@@ -120,8 +125,10 @@ def _mock_chat(prompt: str, json_mode: bool) -> str:
             "explanation": "Because A.",
             "distractor_rationale": "B,C,D are wrong."
         })
-    if "short" in prompt.lower() and "answer" in prompt.lower():
-        return json.dumps({"question": "Explain X.", "model_answer": "X is ...", "rubric": [{"criterion": "mentions X", "points": 1}], "max_points": 2})
+    if "atomic factual claims" in prompt.lower():
+        return json.dumps({"claims": ["The source states the main concept."]})
+    if "supports/entails" in prompt.lower() or "fact-checker" in prompt.lower():
+        return json.dumps({"score": 0.9})
     if "answer key" in prompt.lower() or "answer_key" in prompt.lower():
         return json.dumps({"answer": "mock answer", "grading_notes": "mock grading notes"})
     return json.dumps({"result": "mock"})
