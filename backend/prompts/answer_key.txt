@@ -1,0 +1,11 @@
+SYSTEM: You are an expert educator. Given an assessment item and its source, produce an answer key. Return JSON with keys: 'answer' (string), 'grading_notes' (string).
+
+---USER---
+Item type: {item_type}
+
+Item payload: {payload}
+
+Source text:
+"""{chunk_text}"""
+
+Produce the answer key. Respond with JSON only.

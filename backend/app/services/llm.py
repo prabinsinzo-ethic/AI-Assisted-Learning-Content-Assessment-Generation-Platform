@@ -93,4 +93,6 @@ def _mock_chat(prompt: str, json_mode: bool) -> str:
         })
     if "short" in prompt.lower() and "answer" in prompt.lower():
         return json.dumps({"question": "Explain X.", "model_answer": "X is ...", "rubric": [{"criterion": "mentions X", "points": 1}], "max_points": 2})
+    if "answer key" in prompt.lower() or "answer_key" in prompt.lower():
+        return json.dumps({"answer": "mock answer", "grading_notes": "mock grading notes"})
     return json.dumps({"result": "mock"})

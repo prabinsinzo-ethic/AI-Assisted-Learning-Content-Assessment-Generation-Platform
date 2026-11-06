@@ -275,6 +275,9 @@ def generate_answer_keys(db: Session, document_id: int) -> List[int]:
         logger.debug("Created answer key %s for item %s", item.id, it.id)
     logger.info("Created %d answer key items for document %s", len(created_ids), document_id)
     return created_ids
+
+
+def generate_summaries(db: Session, document_id: int, items_per_chunk: int = 1) -> List[int]:
     doc = db.query(Document).get(document_id)
     if not doc:
         logger.error("Document %s not found", document_id)

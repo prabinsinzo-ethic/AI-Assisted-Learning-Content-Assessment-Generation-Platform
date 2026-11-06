@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..schemas import GenerateRequest, JobStatus
-from ..services.generation import generate_summaries, generate_flashcards, generate_mcqs, generate_short_answers
+from ..services.generation import generate_summaries, generate_flashcards, generate_mcqs, generate_short_answers, generate_answer_keys
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -31,6 +31,9 @@ def trigger_generate(req: GenerateRequest, bg: BackgroundTasks, db: Session = De
                 _JOBS[job_id]["result_ids"].extend(ids)
             if "short_answer" in req.types:
                 ids = generate_short_answers(db, req.document_id, req.items_per_chunk)
+                _JOBS[job_id]["result_ids"].extend(ids)
+            if "answer_key" in req.types:
+                ids = generate_answer_keys(db, req.document_id)
                 _JOBS[job_id]["result_ids"].extend(ids)
             _JOBS[job_id]["progress"] = 1.0
             _JOBS[job_id]["status"] = "done"
