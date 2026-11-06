@@ -59,8 +59,8 @@ class ContentItem(Base):
     payload = Column(Text, nullable=False)
     bloom_level = Column(String(50))
     quality_score = Column(Float)
-    qc_details = Column(Text)  # JSON
-    embedding = Column(Text)  # JSON list
+    qc_details = Column(Text)
+    embedding = Column(Text)
     status = Column(String(50), default="draft")
     version = Column(Integer, default=1)
     created_by = Column(String(50), default="ai")
@@ -97,3 +97,48 @@ class GenerationJob(Base):
 
     def result_list(self):
         return json.loads(self.result_ids or "[]")
+
+
+class Study(Base):
+    __tablename__ = "studies"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    design = Column(Text)
+    status = Column(String(50), default="draft")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class StudyPair(Base):
+    __tablename__ = "study_pairs"
+    id = Column(Integer, primary_key=True)
+    study_id = Column(Integer, ForeignKey("studies.id"), nullable=False)
+    ai_item_id = Column(Integer, ForeignKey("content_items.id"), nullable=False)
+    human_item_id = Column(Integer, ForeignKey("content_items.id"), nullable=False)
+
+
+class StudyAssignment(Base):
+    __tablename__ = "study_assignments"
+    id = Column(Integer, primary_key=True)
+    study_id = Column(Integer, ForeignKey("studies.id"), nullable=False)
+    pair_id = Column(Integer, ForeignKey("study_pairs.id"), nullable=False)
+    rater_id = Column(Integer, nullable=False)
+    blinded_label_ai = Column(String(10), nullable=False)
+
+
+class Rating(Base):
+    __tablename__ = "ratings"
+    id = Column(Integer, primary_key=True)
+    study_id = Column(Integer, ForeignKey("studies.id"), nullable=False)
+    pair_id = Column(Integer, ForeignKey("study_pairs.id"), nullable=False)
+    rater_id = Column(Integer, nullable=False)
+    blinded_label = Column(String(10), nullable=False)
+    item_id = Column(Integer, ForeignKey("content_items.id"), nullable=False)
+    accuracy = Column(Integer)
+    clarity = Column(Integer)
+    difficulty = Column(Integer)
+    distractor_quality = Column(Integer)
+    bloom_alignment = Column(Integer)
+    overall = Column(Integer)
+    would_use = Column(Integer)
+    comments = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
