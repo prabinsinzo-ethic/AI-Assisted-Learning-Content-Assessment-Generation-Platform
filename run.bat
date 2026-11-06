@@ -6,7 +6,7 @@ set "BACKEND=%ROOT%backend"
 
 if /I "%~1"=="stop" goto :stop
 if /I "%~1"=="restart" goto :restart
-if /I "%~1"=="status" goto :status
+if /I "%~1"=="dashboard" goto :dashboard
 if not "%~1"=="" if not "%~1"=="start" (
     echo Usage: %~nx0 [start^|stop^|restart^|status]
     exit /b 1
@@ -37,5 +37,8 @@ netstat -ano | findstr ":%PORT%" | findstr "LISTENING" >nul
 if errorlevel 1 (echo Server is NOT running on port %PORT%.) else (echo Server is running on port %PORT%.)
 goto :end
 
-:end
-endlocal
+:dashboard
+cd /d "%BACKEND%\..\frontend"
+echo Starting Streamlit dashboard on http://127.0.0.1:8501 ...
+start "AI Dashboard" cmd /k "streamlit run app.py --server.port 8501"
+goto :end

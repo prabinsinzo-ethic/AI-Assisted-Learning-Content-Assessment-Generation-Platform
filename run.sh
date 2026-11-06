@@ -36,8 +36,11 @@ case "${1:-start}" in
     sleep 2
     start_server
     ;;
-  status)
-    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+  dashboard)
+    cd "$ROOT/frontend"
+    nohup streamlit run app.py --server.port 8501 > "$ROOT/dashboard.log" 2>&1 &
+    echo "Dashboard started on http://127.0.0.1:8501"
+    ;;
       echo "Server is running (PID $(cat $PIDFILE))."
     else
       echo "Server is NOT running."
