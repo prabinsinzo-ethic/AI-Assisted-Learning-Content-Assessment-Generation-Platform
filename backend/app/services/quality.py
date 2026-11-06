@@ -85,6 +85,68 @@ def verify_item_factual(item: ContentItem, db: Session) -> Dict[str, Any]:
     }
 
 
+def heuristic_filter(item: ContentItem) -> Dict[str, Any]:
+    p = item.payload_obj()
+    reasons = []
+    t = item.item_type
+    if t == "summary":
+        s = p.get("summary", "")
+        if len(s) < 20:
+            reasons.append("summary too short")
+        if len(s) > 5000:
+            reasons.append("summary too long")
+        if not p.get("key_points"):
+            reasons.append("missing key_points")
+    elif t == "flashcard":
+        if not p.get("front") or not p.get("back"):
+            reasons.append("missing front/back")
+        if len(p.get("front", "")) > 500 or len(p.get("back", "")) > 2000:
+            reasons.append("flashcard too long")
+    elif t == "mcq":
+        stem = p.get("stem", "")
+        opts = p.get("options", [])
+        if not stem:
+            reasons.append("missing stem")
+        if len(opts) != 4:
+            reasons.append("mcq must have 4 options")
+        texts = [str(o.get("text", "")).strip().lower() for o in opts]
+        if len(set(texts)) != len(texts):
+            reasons.append("duplicate options")
+        if sum(1 for o in opts if o.get("is_correct")) != 1:
+            reasons.append("mcq must have exactly one correct option")
+        if p.get("correct_index") is not None and not (0 <= int(p["correct_index"]) <= 3):
+            reasons.append("invalid correct_index")
+        low_stem = stem.lower()
+        for ot in texts:
+            if ot and ot in low_stem:
+                reasons.append("answer leakage in stem")
+                break
+        for ot in texts:
+            if "all of the above" in ot or "none of the above" in ot:
+                reasons.append("avoid all/none of the above")
+                break
+        if stem.lower().startswith("which") and len(stem) < 10:
+            reasons.append("trivial stem")
+    elif t == "short_answer":
+        if not p.get("question"):
+            reasons.append("missing question")
+        if not p.get("model_answer"):
+            reasons.append("missing model_answer")
+        if not p.get("rubric"):
+            reasons.append("missing rubric")
+        if not isinstance(p.get("max_points"), int) or p.get("max_points", 0) < 1:
+            reasons.append("invalid max_points")
+    elif t == "answer_key":
+        if not p.get("answer"):
+            reasons.append("missing answer")
+    else:
+        reasons.append("unknown item type")
+    # generic emptiness
+    if not p:
+        reasons.append("empty payload")
+    return {"passed": len(reasons) == 0, "reasons": reasons}
+
+
 BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"]
 
 

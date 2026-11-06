@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from ..db import get_db
 from ..models import ContentItem
-from ..services.quality import verify_item_factual, detect_duplicates, detect_ambiguity, classify_item_bloom, classify_bloom
+from ..services.quality import verify_item_factual, detect_duplicates, detect_ambiguity, classify_item_bloom, heuristic_filter, classify_bloom
 
 router = APIRouter(prefix="/qc", tags=["qc"])
 
@@ -46,6 +46,28 @@ def bloom(req: BloomRequest, db: Session = Depends(get_db)):
         db.commit()
         results.append({"item_id": it.id, "item_type": it.item_type, **res})
     return {"classified": len(results), "results": results}
+
+
+class HeuristicRequest(BaseModel):
+    document_id: int
+    item_ids: Optional[List[int]] = None
+
+
+@router.post("/heuristics")
+def heuristics(req: HeuristicRequest, db: Session = Depends(get_db)):
+    q = db.query(ContentItem).filter(ContentItem.document_id == req.document_id)
+    if req.item_ids:
+        q = q.filter(ContentItem.id.in_(req.item_ids))
+    items = q.all()
+    results = []
+    for it in items:
+        res = heuristic_filter(it)
+        details = json.loads(it.qc_details or "{}")
+        details["heuristics"] = res
+        it.qc_details = json.dumps(details)
+        db.commit()
+        results.append({"item_id": it.id, "item_type": it.item_type, **res})
+    return {"checked": len(results), "results": results}
     q = db.query(ContentItem).filter(ContentItem.document_id == req.document_id)
     if req.item_ids:
         q = q.filter(ContentItem.id.in_(req.item_ids))
