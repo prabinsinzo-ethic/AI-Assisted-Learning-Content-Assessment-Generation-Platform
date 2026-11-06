@@ -18,3 +18,20 @@ def get_db():
 def init_db():
     from . import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    # lightweight migration for new columns
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "content_items" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("content_items")}
+        alters = []
+        if "model" not in cols:
+            alters.append("ALTER TABLE content_items ADD COLUMN model VARCHAR(100)")
+        if "prompt_version" not in cols:
+            alters.append("ALTER TABLE content_items ADD COLUMN prompt_version VARCHAR(50)")
+        if "temperature" not in cols:
+            alters.append("ALTER TABLE content_items ADD COLUMN temperature FLOAT")
+        if "parent_item_id" not in cols:
+            alters.append("ALTER TABLE content_items ADD COLUMN parent_item_id INTEGER")
+        with engine.begin() as conn:
+            for a in alters:
+                conn.execute(text(a))

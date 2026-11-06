@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from .db import init_db
+init_db()
+
 from .logging_config import setup_logging, get_logger
 from .routers import documents, generation, items, auth
 

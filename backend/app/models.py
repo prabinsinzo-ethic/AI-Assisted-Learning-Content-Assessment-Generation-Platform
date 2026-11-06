@@ -63,6 +63,11 @@ class ContentItem(Base):
     version = Column(Integer, default=1)
     created_by = Column(String(50), default="ai")
     created_at = Column(DateTime, default=datetime.utcnow)
+    # provenance / lineage
+    model = Column(String(100))
+    prompt_version = Column(String(50))
+    temperature = Column(Float)
+    parent_item_id = Column(Integer, ForeignKey("content_items.id"))
     document = relationship("Document", back_populates="items")
 
     def chunk_id_list(self):

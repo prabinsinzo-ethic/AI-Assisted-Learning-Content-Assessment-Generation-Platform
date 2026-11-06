@@ -9,6 +9,7 @@ from ..services.llm import chat_json, chat_json_with_retry
 from ..schemas import SummaryPayload, FlashcardPayload, MCQPayload, ShortAnswerPayload, AnswerKeyPayload
 from ..prompt_registry import load_template, render
 from ..logging_config import get_logger
+from ..config import LLM_MODEL
 
 logger = get_logger("app.generation")
 
@@ -64,6 +65,9 @@ def generate_flashcards(db: Session, document_id: int, items_per_chunk: int = 1)
                 quality_score=None,
                 status="draft",
                 created_by="ai",
+            model=LLM_MODEL,
+            prompt_version="1.0",
+            temperature=0.7,
             )
             db.add(item)
             db.commit()
@@ -123,6 +127,9 @@ def generate_mcqs(db: Session, document_id: int, items_per_chunk: int = 1) -> Li
                 quality_score=None,
                 status="draft",
                 created_by="ai",
+            model=LLM_MODEL,
+            prompt_version="1.0",
+            temperature=0.7,
             )
             db.add(item)
             db.commit()
@@ -192,6 +199,9 @@ def generate_short_answers(db: Session, document_id: int, items_per_chunk: int =
                 quality_score=None,
                 status="draft",
                 created_by="ai",
+            model=LLM_MODEL,
+            prompt_version="1.0",
+            temperature=0.7,
             )
             db.add(item)
             db.commit()
@@ -274,6 +284,9 @@ def generate_answer_keys(db: Session, document_id: int) -> List[int]:
             quality_score=None,
             status="draft",
             created_by="ai",
+            model=LLM_MODEL,
+            prompt_version="1.0",
+            temperature=0.7,
         )
         db.add(item)
         db.commit()
@@ -307,6 +320,9 @@ def generate_summaries(db: Session, document_id: int, items_per_chunk: int = 1) 
                 quality_score=None,
                 status="draft",
                 created_by="ai",
+            model=LLM_MODEL,
+            prompt_version="1.0",
+            temperature=0.7,
             )
             db.add(item)
             db.commit()

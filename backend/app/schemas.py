@@ -100,6 +100,10 @@ class ContentItemOut(BaseModel):
     version: int
     created_by: str
     created_at: str
+    model: Optional[str] = None
+    prompt_version: Optional[str] = None
+    temperature: Optional[float] = None
+    parent_item_id: Optional[int] = None
 
 
 class GenerateRequest(BaseModel):
