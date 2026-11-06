@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from ..db import get_db
 from ..models import ContentItem
-from ..services.quality import verify_item_factual, detect_duplicates, detect_ambiguity, classify_item_bloom, heuristic_filter, score_quality
+from ..services.quality import verify_item_factual, detect_duplicates, detect_ambiguity, classify_item_bloom, heuristic_filter, score_quality, check_consistency
 
 router = APIRouter(prefix="/qc", tags=["qc"])
 
@@ -129,3 +129,25 @@ def quality_score(req: QualityRequest, db: Session = Depends(get_db)):
         db.commit()
         results.append({"item_id": it.id, "item_type": it.item_type, **res})
     return {"scored": len(results), "results": results}
+
+
+class ConsistencyRequest(BaseModel):
+    document_id: int
+    item_ids: Optional[List[int]] = None
+
+
+@router.post("/consistency")
+def consistency(req: ConsistencyRequest, db: Session = Depends(get_db)):
+    q = db.query(ContentItem).filter(ContentItem.document_id == req.document_id)
+    if req.item_ids:
+        q = q.filter(ContentItem.id.in_(req.item_ids))
+    items = q.all()
+    results = []
+    for it in items:
+        res = check_consistency(it, db)
+        details = json.loads(it.qc_details or "{}")
+        details["consistency"] = res
+        it.qc_details = json.dumps(details)
+        db.commit()
+        results.append({"item_id": it.id, "item_type": it.item_type, **res})
+    return {"checked": len(results), "results": results}

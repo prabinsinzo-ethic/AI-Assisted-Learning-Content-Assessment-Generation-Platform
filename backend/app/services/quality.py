@@ -85,6 +85,69 @@ def verify_item_factual(item: ContentItem, db: Session) -> Dict[str, Any]:
     }
 
 
+def check_consistency(item: ContentItem, db: Session) -> Dict[str, Any]:
+    p = item.payload_obj()
+    chunks = [db.query(Chunk).get(cid) for cid in item.chunk_id_list()]
+    chunks = [c for c in chunks if c]
+    source = "\n\n".join(c.text for c in chunks)
+    # build a question/prompt for independent answer
+    if item.item_type == "mcq":
+        question = p.get("stem", "")
+        stored = next((o["text"] for o in p.get("options", []) if o.get("is_correct")), "")
+    elif item.item_type == "short_answer":
+        question = p.get("question", "")
+        stored = p.get("model_answer", "")
+    elif item.item_type == "flashcard":
+        question = p.get("front", "")
+        stored = p.get("back", "")
+    elif item.item_type == "summary":
+        question = "Summarize the source."
+        stored = p.get("summary", "")
+    else:
+        question = str(p)
+        stored = str(p)
+    prompt = (
+        "Answer the following question using ONLY the source. Return JSON {\"answer\": \"...\"}.\n\n"
+        f"SOURCE:\n{source}\n\nQUESTION:\n{question}"
+    )
+    try:
+        data = chat_json(prompt, system="You answer strictly from the source.")
+        regenerated = data.get("answer", "")
+    except Exception as e:
+        logger.warning("Consistency regeneration failed: %s", e)
+        regenerated = ""
+    # judge consistency
+    judge_prompt = (
+        "Compare STORED answer and REGENERATED answer. Are they consistent (same meaning)? "
+        "Return JSON {\"consistent\": true/false, \"reason\": \"...\"}.\n\n"
+        f"STORED: {stored}\nREGENERATED: {regenerated}"
+    )
+    try:
+        j = chat_json(judge_prompt, system="You compare answers for consistency.")
+        consistent = bool(j.get("consistent", False))
+        reason = j.get("reason", "")
+    except Exception as e:
+        # fallback: simple equality-ish
+        consistent = regenerated.strip().lower() == stored.strip().lower()
+        reason = str(e)
+    # MCQ extra: verify correct_index
+    if item.item_type == "mcq":
+        opts = p.get("options", [])
+        ci = p.get("correct_index")
+        if not (isinstance(ci, int) and 0 <= ci <= 3 and ci < len(opts)):
+            consistent = False
+            reason = "invalid correct_index"
+        elif not opts[ci].get("is_correct"):
+            consistent = False
+            reason = "correct_index mismatch"
+    return {
+        "consistent": consistent,
+        "stored_answer": stored,
+        "regenerated_answer": regenerated,
+        "reason": reason,
+    }
+
+
 def score_quality(item: ContentItem) -> Dict[str, Any]:
     p = item.payload_obj()
     prompt = (
