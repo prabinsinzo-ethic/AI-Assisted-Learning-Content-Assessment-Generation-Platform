@@ -9,12 +9,14 @@ router = APIRouter(prefix="/items", tags=["items"])
 
 
 @router.get("", response_model=list[ContentItemOut])
-def list_items(document_id: int = None, item_type: str = None, db: Session = Depends(get_db)):
+def list_items(document_id: int = None, item_type: str = None, status: str = None, db: Session = Depends(get_db)):
     q = db.query(ContentItem)
     if document_id is not None:
         q = q.filter(ContentItem.document_id == document_id)
     if item_type is not None:
         q = q.filter(ContentItem.item_type == item_type)
+    if status is not None:
+        q = q.filter(ContentItem.status == status)
     items = q.order_by(ContentItem.id.desc()).all()
     out = []
     for it in items:

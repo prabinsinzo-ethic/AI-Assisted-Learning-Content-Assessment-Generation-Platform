@@ -20,7 +20,7 @@ with st.sidebar:
         os.environ["API_URL"] = api_url
         API = api_url
 
-tab_docs, tab_items, tab_qc = st.tabs(["Documents", "Items", "Quality Control"])
+tab_docs, tab_review, tab_items, tab_qc = st.tabs(["Documents", "Review Queue", "Items", "Quality Control"])
 
 # --- Documents tab ---
 with tab_docs:
@@ -77,6 +77,47 @@ with tab_docs:
                 st.success(f"Job {s['status']}: {s.get('result_ids')}")
             else:
                 st.error(r.text)
+
+# --- Review Queue tab ---
+with tab_review:
+    st.subheader("Pending Review Queue")
+    rq_doc = st.number_input("Document ID", min_value=1, value=1, key="rqdoc")
+    rq_type = st.selectbox("Type filter", ["", "summary", "flashcard", "mcq", "short_answer", "answer_key"], key="rqtype")
+    params = {"document_id": rq_doc, "status": "draft"}
+    if rq_type:
+        params["item_type"] = rq_type
+    try:
+        pending = requests.get(f"{API}/items", params=params).json()
+    except Exception as e:
+        pending = []
+        st.error(e)
+    st.write(f"Pending: {len(pending)}")
+    # bulk selection
+    selected_ids = []
+    for it in pending:
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.markdown(f"**Item {it['id']}** — {it['item_type']} | Bloom: {it.get('bloom_level')} | Q: {it.get('quality_score')}")
+            st.json(it["payload"])
+        with col2:
+            if st.checkbox("Select", key=f"sel_{it['id']}"):
+                selected_ids.append(it["id"])
+            if st.button("Approve", key=f"appr_{it['id']}"):
+                requests.patch(f"{API}/items/{it['id']}", json={"status": "approved"})
+                st.success("Approved")
+            if st.button("Reject", key=f"rej_{it['id']}"):
+                requests.patch(f"{API}/items/{it['id']}", json={"status": "rejected"})
+                st.success("Rejected")
+    st.divider()
+    c1, c2 = st.columns(2)
+    if c1.button("Bulk Approve Selected"):
+        for iid in selected_ids:
+            requests.patch(f"{API}/items/{iid}", json={"status": "approved"})
+        st.success(f"Approved {len(selected_ids)}")
+    if c2.button("Bulk Reject Selected"):
+        for iid in selected_ids:
+            requests.patch(f"{API}/items/{iid}", json={"status": "rejected"})
+        st.success(f"Rejected {len(selected_ids)}")
 
 # --- Items tab ---
 with tab_items:
