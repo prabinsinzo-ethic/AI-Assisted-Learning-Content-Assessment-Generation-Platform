@@ -5,7 +5,8 @@ from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
 from ..models import Document, Chunk, ContentItem
-from ..services.llm import chat_json
+from ..services.llm import chat_json, chat_json_with_retry
+from ..schemas import SummaryPayload, FlashcardPayload, MCQPayload, ShortAnswerPayload, AnswerKeyPayload
 from ..prompt_registry import load_template, render
 from ..logging_config import get_logger
 
@@ -50,8 +51,9 @@ def generate_flashcards(db: Session, document_id: int, items_per_chunk: int = 1)
     for chunk in sorted(doc.chunks, key=lambda c: c.order_index):
         for _ in range(items_per_chunk):
             tmpl = render(load_template("flashcard"), section=chunk.section or "", chunk_text=chunk.text)
-            payload = chat_json(tmpl["user"], system=tmpl["system"])
-            if "front" not in payload or "back" not in payload:
+            try:
+                payload = chat_json_with_retry(tmpl["user"], system=tmpl["system"], validate=lambda d: FlashcardPayload(**d))
+            except ValueError:
                 payload = {"front": "Key concept", "back": chunk.text[:200], "tags": []}
             item = ContentItem(
                 document_id=document_id,
@@ -97,8 +99,9 @@ def generate_mcqs(db: Session, document_id: int, items_per_chunk: int = 1) -> Li
     for chunk in sorted(doc.chunks, key=lambda c: c.order_index):
         for _ in range(items_per_chunk):
             tmpl = render(load_template("mcq"), section=chunk.section or "", chunk_text=chunk.text)
-            payload = chat_json(tmpl["user"], system=tmpl["system"])
-            if not _valid_mcq(payload):
+            try:
+                payload = chat_json_with_retry(tmpl["user"], system=tmpl["system"], validate=lambda d: MCQPayload(**d))
+            except ValueError:
                 payload = {
                     "stem": "Which statement is correct?",
                     "options": [
@@ -171,8 +174,9 @@ def generate_short_answers(db: Session, document_id: int, items_per_chunk: int =
     for chunk in sorted(doc.chunks, key=lambda c: c.order_index):
         for _ in range(items_per_chunk):
             tmpl = render(load_template("short_answer"), section=chunk.section or "", chunk_text=chunk.text)
-            payload = chat_json(tmpl["user"], system=tmpl["system"])
-            if not _valid_short_answer(payload):
+            try:
+                payload = chat_json_with_retry(tmpl["user"], system=tmpl["system"], validate=lambda d: ShortAnswerPayload(**d))
+            except ValueError:
                 payload = {
                     "question": "Explain the main concept described.",
                     "model_answer": chunk.text[:200],
@@ -231,7 +235,10 @@ def generate_answer_keys(db: Session, document_id: int) -> List[int]:
         chunk = db.query(Chunk).get(chunk_ids[0]) if chunk_ids else None
         source = chunk.text if chunk else ""
         tmpl = render(load_template("answer_key"), item_type=it.item_type, payload=it.payload, chunk_text=source)
-        payload_llm = chat_json(tmpl["user"], system=tmpl["system"])
+        try:
+            payload_llm = chat_json_with_retry(tmpl["user"], system=tmpl["system"], validate=lambda d: AnswerKeyPayload(item_id=it.id, **d))
+        except ValueError:
+            payload_llm = {}
         answer = payload_llm.get("answer")
         grading_notes = payload_llm.get("grading_notes", "")
         if not answer:
@@ -287,9 +294,10 @@ def generate_summaries(db: Session, document_id: int, items_per_chunk: int = 1) 
     for chunk in sorted(doc.chunks, key=lambda c: c.order_index):
         for _ in range(items_per_chunk):
             tmpl = render(load_template("summary"), section=chunk.section or "", chunk_text=chunk.text)
-            payload = chat_json(tmpl["user"], system=tmpl["system"])
-            if "summary" not in payload:
-                payload = {"summary": str(payload), "key_points": [], "length_tokens": len(chunk.text.split())}
+            try:
+                payload = chat_json_with_retry(tmpl["user"], system=tmpl["system"], validate=lambda d: SummaryPayload(**d))
+            except ValueError:
+                payload = {"summary": str(chunk.text)[:200], "key_points": [], "length_tokens": len(chunk.text.split())}
             item = ContentItem(
                 document_id=document_id,
                 chunk_ids=json.dumps([chunk.id]),

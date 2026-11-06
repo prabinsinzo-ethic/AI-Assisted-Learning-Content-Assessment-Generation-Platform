@@ -66,7 +66,36 @@ def embed(texts: List[str]) -> List[List[float]]:
     return [d.embedding for d in resp.data]
 
 
-def cosine(a, b):
+def chat_json_with_retry(prompt: str, system: str = "", validate=None, max_retries: int = 3, temperature: float = 0.7) -> Dict[str, Any]:
+    last_err = None
+    cur_prompt = prompt
+    for attempt in range(max_retries):
+        raw = chat(cur_prompt, system=system, json_mode=True, temperature=temperature)
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1:
+                try:
+                    data = json.loads(raw[start:end + 1])
+                except json.JSONDecodeError as e:
+                    last_err = e
+                    cur_prompt = prompt + f"\n\nPrevious output was invalid JSON: {e}. Return valid JSON only."
+                    continue
+            else:
+                last_err = ValueError("No JSON found")
+                cur_prompt = prompt + "\n\nPrevious output was invalid JSON. Return valid JSON only."
+                continue
+        if validate is not None:
+            try:
+                validate(data)
+            except Exception as e:
+                last_err = e
+                cur_prompt = prompt + f"\n\nPrevious output failed validation: {e}. Fix and return valid JSON only."
+                continue
+        return data
+    raise ValueError(f"Failed to generate valid JSON after {max_retries} attempts: {last_err}")
     import math
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
