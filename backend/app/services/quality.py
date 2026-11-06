@@ -85,6 +85,36 @@ def verify_item_factual(item: ContentItem, db: Session) -> Dict[str, Any]:
     }
 
 
+def score_quality(item: ContentItem) -> Dict[str, Any]:
+    p = item.payload_obj()
+    prompt = (
+        "Rate the quality of the following assessment item on a 1-5 scale. "
+        "Provide scores for clarity, relevance, and difficulty appropriateness, plus an overall quality_score.\n\n"
+        f"Item type: {item.item_type}\nItem: {json.dumps(p)}\n\n"
+        "Return JSON: {\"quality_score\": 1-5, \"clarity\": 1-5, \"relevance\": 1-5, \"difficulty\": 1-5, \"passed\": true/false}."
+    )
+    try:
+        data = chat_json(prompt, system="You are a strict assessment quality reviewer.")
+        qs = int(data.get("quality_score", 3))
+        qs = max(1, min(5, qs))
+        clarity = int(data.get("clarity", qs))
+        relevance = int(data.get("relevance", qs))
+        difficulty = int(data.get("difficulty", qs))
+        passed = bool(data.get("passed", qs >= 3))
+    except Exception as e:
+        logger.warning("Quality scoring failed: %s", e)
+        qs = 3
+        clarity = relevance = difficulty = 3
+        passed = False
+    return {
+        "quality_score": qs,
+        "clarity": clarity,
+        "relevance": relevance,
+        "difficulty": difficulty,
+        "passed": passed,
+    }
+
+
 def heuristic_filter(item: ContentItem) -> Dict[str, Any]:
     p = item.payload_obj()
     reasons = []
