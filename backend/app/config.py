@@ -16,5 +16,6 @@ LLM_MODEL_CHEAP = os.getenv("LLM_MODEL_CHEAP", "gpt-4o-mini")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "text-embedding-3-small")
 MOCK_LLM = os.getenv("MOCK_LLM", "false").lower() == "true"
 
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "25"))
+AUTH_REQUIRED = os.getenv("AUTH_REQUIRED", "false").lower() == "true"
+RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "120"))

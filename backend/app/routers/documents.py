@@ -16,6 +16,12 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 @router.post("", response_model=DocumentOut)
 async def upload_document(title: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
+    from ..config import MAX_UPLOAD_MB
+    if file.size and file.size > MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(413, "File too large")
+    allowed = {".pdf", ".docx", ".txt", ".md"}
+    if Path(file.filename).suffix.lower() not in allowed:
+        raise HTTPException(400, "Unsupported file type")
     dest = UPLOAD_DIR / file.filename
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
