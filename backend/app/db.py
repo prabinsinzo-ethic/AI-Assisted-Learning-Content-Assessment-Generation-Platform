@@ -34,6 +34,8 @@ def init_db():
             alters.append("ALTER TABLE content_items ADD COLUMN parent_item_id INTEGER")
         if "qc_details" not in cols:
             alters.append("ALTER TABLE content_items ADD COLUMN qc_details TEXT")
+        if "embedding" not in cols:
+            alters.append("ALTER TABLE content_items ADD COLUMN embedding TEXT")
         with engine.begin() as conn:
             for a in alters:
                 conn.execute(text(a))

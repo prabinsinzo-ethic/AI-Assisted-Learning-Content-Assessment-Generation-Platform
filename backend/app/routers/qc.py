@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from ..db import get_db
 from ..models import ContentItem
-from ..services.quality import verify_item_factual
+from ..services.quality import verify_item_factual, detect_duplicates
 
 router = APIRouter(prefix="/qc", tags=["qc"])
 
@@ -15,8 +15,15 @@ class VerifyRequest(BaseModel):
     item_ids: Optional[List[int]] = None
 
 
-@router.post("/verify")
-def verify(req: VerifyRequest, db: Session = Depends(get_db)):
+class DedupRequest(BaseModel):
+    document_id: int
+    threshold: float = 0.85
+
+
+@router.post("/dedup")
+def dedup(req: DedupRequest, db: Session = Depends(get_db)):
+    dups = detect_duplicates(db, req.document_id, req.threshold)
+    return {"duplicates_found": len(dups), "duplicates": dups}
     q = db.query(ContentItem).filter(ContentItem.document_id == req.document_id)
     if req.item_ids:
         q = q.filter(ContentItem.id.in_(req.item_ids))

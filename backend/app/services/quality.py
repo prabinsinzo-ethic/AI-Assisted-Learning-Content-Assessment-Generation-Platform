@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
 from ..models import ContentItem, Chunk
-from ..services.llm import chat_json
+from ..services.llm import chat_json, embed, cosine as cos_sim
 from ..logging_config import get_logger
 
 logger = get_logger("app.quality")
@@ -83,3 +83,47 @@ def verify_item_factual(item: ContentItem, db: Session) -> Dict[str, Any]:
         "claims": details,
         "threshold": GROUNDING_THRESHOLD,
     }
+
+
+def item_text(item: ContentItem) -> str:
+    p = item.payload_obj()
+    t = item.item_type
+    if t == "summary":
+        return p.get("summary", "") + " " + " ".join(p.get("key_points", []))
+    if t == "flashcard":
+        return p.get("front", "") + " " + p.get("back", "")
+    if t == "mcq":
+        opts = " ".join(o.get("text", "") for o in p.get("options", []))
+        return p.get("stem", "") + " " + opts
+    if t == "short_answer":
+        return p.get("question", "") + " " + p.get("model_answer", "")
+    if t == "answer_key":
+        return p.get("answer", "") + " " + p.get("grading_notes", "")
+    return str(p)
+
+
+def detect_duplicates(db: Session, document_id: int, threshold: float = 0.85) -> List[Dict[str, Any]]:
+    items = db.query(ContentItem).filter(ContentItem.document_id == document_id).all()
+    texts = [item_text(it) for it in items]
+    vecs = [json.loads(it.embedding) if it.embedding else None for it in items]
+    for i, v in enumerate(vecs):
+        if v is None:
+            ev = embed([texts[i]])[0]
+            items[i].embedding = json.dumps(ev)
+            vecs[i] = ev
+    db.commit()
+    duplicates = []
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            sim = cos_sim(vecs[i], vecs[j])
+            if sim >= threshold:
+                if items[j].status != "rejected":
+                    items[j].status = "rejected"
+                details = json.loads(items[j].qc_details or "{}")
+                details["duplicate_of"] = items[i].id
+                details["similarity"] = sim
+                items[j].qc_details = json.dumps(details)
+                duplicates.append({"item_id": items[j].id, "duplicate_of": items[i].id, "similarity": sim})
+    db.commit()
+    logger.info("Found %d duplicates in document %s", len(duplicates), document_id)
+    return duplicates

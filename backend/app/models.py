@@ -60,6 +60,7 @@ class ContentItem(Base):
     bloom_level = Column(String(50))
     quality_score = Column(Float)
     qc_details = Column(Text)  # JSON
+    embedding = Column(Text)  # JSON list
     status = Column(String(50), default="draft")
     version = Column(Integer, default=1)
     created_by = Column(String(50), default="ai")

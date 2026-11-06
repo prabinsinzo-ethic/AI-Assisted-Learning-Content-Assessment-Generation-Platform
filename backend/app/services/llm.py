@@ -105,7 +105,40 @@ def chat_json_with_retry(prompt: str, system: str = "", validate=None, max_retri
     return dot / (na * nb)
 
 
+def cosine(a, b):
+    import math
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    if na == 0 or nb == 0:
+        return 0.0
+    return dot / (na * nb)
+
+
 def _mock_chat(prompt: str, json_mode: bool) -> str:
+    low = prompt.lower()
+    if "atomic factual claims" in low:
+        return json.dumps({"claims": ["The source states the main concept."]})
+    if "supports/entails" in low or "fact-checker" in low:
+        return json.dumps({"score": 0.9})
+    if "summary" in low:
+        return json.dumps({"summary": "This is a mock summary of the provided content.", "key_points": ["Point A", "Point B"]})
+    if "flashcard" in low:
+        return json.dumps({"front": "What is X?", "back": "X is Y."})
+    if "mcq" in low or "multiple choice" in low:
+        return json.dumps({
+            "stem": "Which of the following is correct?",
+            "options": [{"text": "Option A", "is_correct": True}, {"text": "Option B", "is_correct": False},
+                        {"text": "Option C", "is_correct": False}, {"text": "Option D", "is_correct": False}],
+            "correct_index": 0,
+            "explanation": "Because A.",
+            "distractor_rationale": "B,C,D are wrong."
+        })
+    if "short" in low and "answer" in low:
+        return json.dumps({"question": "Explain X.", "model_answer": "X is ...", "rubric": [{"criterion": "mentions X", "points": 1}], "max_points": 2})
+    if "answer key" in low or "answer_key" in low:
+        return json.dumps({"answer": "mock answer", "grading_notes": "mock grading notes"})
+    return json.dumps({"result": "mock"})
     # Minimal mock responses for testing without API key
     low = prompt.lower()
     if "atomic factual claims" in low:
