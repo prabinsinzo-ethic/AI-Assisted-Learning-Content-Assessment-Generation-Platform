@@ -31,7 +31,52 @@ def list_items(document_id: int = None, item_type: str = None, status: str = Non
     return out
 
 
-@router.patch("/{item_id}")
+@router.get("/{item_id}/versions")
+def item_versions(item_id: int, db: Session = Depends(get_db)):
+    # collect lineage
+    versions = []
+    cur = db.query(ContentItem).get(item_id)
+    if not cur:
+        raise HTTPException(404, "Not found")
+    # walk up parents
+    chain = [cur]
+    parent_id = cur.parent_item_id
+    while parent_id:
+        p = db.query(ContentItem).get(parent_id)
+        if not p:
+            break
+        chain.insert(0, p)
+        parent_id = p.parent_item_id
+    # walk down children
+    def children_of(iid):
+        return db.query(ContentItem).filter(ContentItem.parent_item_id == iid).all()
+    # BFS
+    stack = [cur.id]
+    seen = {cur.id}
+    while stack:
+        cid = stack.pop()
+        for ch in children_of(cid):
+            if ch.id not in seen:
+                seen.add(ch.id)
+                chain.append(ch)
+                stack.append(ch.id)
+    # dedup by id preserving order
+    uniq = []
+    seen_ids = set()
+    for c in chain:
+        if c.id not in seen_ids:
+            seen_ids.add(c.id)
+            uniq.append(c)
+    out = []
+    for it in uniq:
+        out.append(ContentItemOut(
+            id=it.id, document_id=it.document_id, chunk_ids=it.chunk_id_list(),
+            item_type=it.item_type, payload=it.payload_obj(), bloom_level=it.bloom_level,
+            quality_score=it.quality_score, status=it.status, version=it.version,
+            created_by=it.created_by, created_at=it.created_at.isoformat(),
+            model=it.model, prompt_version=it.prompt_version, temperature=it.temperature,
+            parent_item_id=it.parent_item_id))
+    return out
 def update_item(item_id: int, payload: dict, db: Session = Depends(get_db)):
     it = db.query(ContentItem).get(item_id)
     if not it:

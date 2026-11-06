@@ -137,6 +137,28 @@ with tab_items:
         with st.expander(f"Item {it['id']} - {it['item_type']} ({it['status']})"):
             st.json(it["payload"])
             st.write(f"Bloom: {it.get('bloom_level')} | Quality: {it.get('quality_score')} | Model: {it.get('model')}")
+            # Edit
+            with st.expander(f"Edit item {it['id']}"):
+                import json as _json
+                txt = st.text_area("Payload JSON", value=_json.dumps(it["payload"], indent=2), key=f"edit_{it['id']}")
+                if st.button("Save edit (new version)", key=f"save_{it['id']}"):
+                    try:
+                        new_payload = _json.loads(txt)
+                        r = requests.patch(f"{API}/items/{it['id']}", json={"payload": new_payload})
+                        if r.ok:
+                            st.success(f"New version created: {r.json()}")
+                        else:
+                            st.error(r.text)
+                    except Exception as e:
+                        st.error(str(e))
+            # Versions
+            if st.button("View versions", key=f"ver_{it['id']}"):
+                r = requests.get(f"{API}/items/{it['id']}/versions")
+                if r.ok:
+                    for v in r.json():
+                        st.write(f"v{v['version']} (id {v['id']}, by {v['created_by']}, status {v['status']})")
+                else:
+                    st.error(r.text)
             new_status = st.selectbox("Status", ["draft", "approved", "rejected"], index=["draft", "approved", "rejected"].index(it["status"]), key=f"st_{it['id']}")
             if st.button("Update status", key=f"btn_{it['id']}"):
                 r = requests.patch(f"{API}/items/{it['id']}", json={"status": new_status})
