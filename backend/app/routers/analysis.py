@@ -36,7 +36,6 @@ def analyze(study_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Study not found")
     pairs = db.query(StudyPair).filter(StudyPair.study_id == study_id).all()
     criteria = ["accuracy", "clarity", "difficulty", "distractor_quality", "bloom_alignment", "overall", "would_use"]
-    # paired AI vs human mean scores per criterion
     paired = {c: {"ai": [], "human": []} for c in criteria}
     per_pair = []
     for p in pairs:
@@ -52,13 +51,12 @@ def analyze(study_id: int, db: Session = Depends(get_db)):
                 paired[c]["human"].extend(h_vals)
         per_pair.append(pair_info)
 
-    # aggregate comparison
-    comparison = {}
     try:
         from scipy import stats
         has_scipy = True
     except Exception:
         has_scipy = False
+    comparison = {}
     for c in criteria:
         a = paired[c]["ai"]
         b = paired[c]["human"]
@@ -85,10 +83,8 @@ def analyze(study_id: int, db: Session = Depends(get_db)):
             entry["wilcoxon_p"] = None
         comparison[c] = entry
 
-    # inter-rater reliability: ICC(2,1) per criterion using items rated by multiple raters
     icc = {}
     for c in criteria:
-        # build matrix subjects (items) x raters
         items = {}
         for p in pairs:
             for item_id in (p.ai_item_id, p.human_item_id):
@@ -97,46 +93,37 @@ def analyze(study_id: int, db: Session = Depends(get_db)):
             val = getattr(r, c)
             if val is not None:
                 items[r.item_id][r.rater_id] = val
-        # subjects with at least 2 raters
         subjects = [v for v in items.values() if len(v) >= 2]
         if len(subjects) < 2:
             icc[c] = None
             continue
-        # align raters
         raters = sorted({rid for s in subjects for rid in s})
-        k = len(raters)
-        n = len(subjects)
-        # matrix n x k with nan
-        M = np.full((n, k), np.nan)
+        M = np.full((len(subjects), len(raters)), np.nan)
         for i, s in enumerate(subjects):
             for j, rid in enumerate(raters):
                 if rid in s:
                     M[i, j] = s[rid]
-        # remove columns with all nan
         col_mask = ~np.all(np.isnan(M), axis=0)
         M = M[:, col_mask]
         k = M.shape[1]
         if k < 2:
             icc[c] = None
             continue
-        # fill missing with subject mean (simple)
         for i in range(M.shape[0]):
             row = M[i]
             m = np.nanmean(row)
             M[i] = np.where(np.isnan(row), m, row)
-        # ICC(2,1)
-        MSB = np.var(M.mean(axis=1), ddof=1) * k  # approx? compute properly
-        # proper:
         grand_mean = M.mean()
         ss_between = k * np.sum((M.mean(axis=1) - grand_mean) ** 2)
         ss_within = np.sum((M - M.mean(axis=1, keepdims=True)) ** 2)
-        ss_raters = n * np.sum((M.mean(axis=0) - grand_mean) ** 2)
-        df_between = n - 1
-        df_within = n * (k - 1)
+        ss_raters = M.shape[0] * np.sum((M.mean(axis=0) - grand_mean) ** 2)
+        df_between = M.shape[0] - 1
+        df_within = M.shape[0] * (k - 1)
         df_raters = k - 1
         MSB = ss_between / df_between if df_between else 0
         MSW = ss_within / df_within if df_within else 0
         MSR = ss_raters / df_raters if df_raters else 0
+        n = M.shape[0]
         denom = MSB + (k - 1) * MSW + k * (MSR - MSW) / n
         icc_val = (MSB - MSW) / denom if denom != 0 else None
         icc[c] = float(icc_val) if icc_val is not None else None
@@ -147,4 +134,49 @@ def analyze(study_id: int, db: Session = Depends(get_db)):
         "comparison": comparison,
         "icc": icc,
         "pairs": per_pair,
+    }
+
+
+@router.get("/{study_id}/report")
+def report(study_id: int, db: Session = Depends(get_db)):
+    st = db.query(Study).get(study_id)
+    if not st:
+        raise HTTPException(404, "Study not found")
+    a = analyze(study_id, db)
+    comp = a["comparison"]
+    overall_ai = comp["overall"]["ai_mean"]
+    overall_human = comp["overall"]["human_mean"]
+    parity = None
+    if overall_ai is not None and overall_human:
+        parity = overall_ai / overall_human
+    icc_vals = [v for v in a["icc"].values() if v is not None]
+    avg_icc = (sum(icc_vals) / len(icc_vals)) if icc_vals else None
+    recs = []
+    if parity is not None:
+        if parity >= 0.9:
+            recs.append("AI items achieved parity with human items on overall quality.")
+        elif parity >= 0.8:
+            recs.append("AI items approached human quality; consider prompt tuning.")
+        else:
+            recs.append("AI items below human quality; revisit generation prompts and QC thresholds.")
+    if avg_icc is not None:
+        if avg_icc < 0.7:
+            recs.append("Inter-rater reliability below target (ICC<0.7); rater training needed.")
+        else:
+            recs.append("Inter-rater reliability acceptable.")
+    for c, v in comp.items():
+        if v.get("ai_mean") is not None and v.get("human_mean"):
+            if v["ai_mean"] < 0.8 * v["human_mean"]:
+                recs.append(f"Improve {c}: AI mean {v['ai_mean']:.2f} vs human {v['human_mean']:.2f}.")
+    if not recs:
+        recs.append("Insufficient data for recommendations.")
+    return {
+        "study_id": study_id,
+        "study_name": st.name,
+        "status": st.status,
+        "parity_ratio_overall": parity,
+        "avg_icc": avg_icc,
+        "comparison": comp,
+        "icc": a["icc"],
+        "recommendations": recs,
     }
