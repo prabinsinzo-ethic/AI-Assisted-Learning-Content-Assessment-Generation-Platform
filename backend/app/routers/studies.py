@@ -37,8 +37,10 @@ class RatingIn(BaseModel):
     comments: Optional[str] = None
 
 
-@router.post("")
-def create_study(payload: StudyIn, db: Session = Depends(get_db)):
+@router.get("")
+def list_studies(db: Session = Depends(get_db)):
+    studies = db.query(Study).order_by(Study.id.desc()).all()
+    return [{"id": s.id, "name": s.name, "status": s.status, "created_at": s.created_at.isoformat()} for s in studies]
     study = Study(name=payload.name, design=payload.design, status="active")
     db.add(study)
     db.commit()
@@ -109,6 +111,19 @@ def submit_rating(study_id: int, payload: RatingIn, db: Session = Depends(get_db
     ).first()
     if not assign:
         raise HTTPException(400, "No assignment for rater")
+    # upsert: if rating exists for this rater+pair+blinded_label, update
+    existing = db.query(Rating).filter(
+        Rating.study_id == study_id,
+        Rating.pair_id == pair.id,
+        Rating.rater_id == payload.rater_id,
+        Rating.blinded_label == payload.blinded_label,
+    ).first()
+    if existing:
+        for field in ["accuracy", "clarity", "difficulty", "distractor_quality", "bloom_alignment", "overall", "would_use", "comments", "item_id"]:
+            setattr(existing, field, getattr(payload, field))
+        db.commit()
+        db.refresh(existing)
+        return {"id": existing.id, "ok": True, "updated": True}
     rating = Rating(
         study_id=study_id,
         pair_id=pair.id,
@@ -171,3 +186,40 @@ def results(study_id: int, db: Session = Depends(get_db)):
             "human": agg(human_scores),
         })
     return {"study_id": study_id, "pairs": out_pairs}
+
+
+class PatchStudyIn(BaseModel):
+    status: str
+
+
+@router.patch("/{study_id}")
+def update_study(study_id: int, payload: PatchStudyIn, db: Session = Depends(get_db)):
+    st = db.query(Study).get(study_id)
+    if not st:
+        raise HTTPException(404, "Study not found")
+    if payload.status not in ("draft", "active", "completed"):
+        raise HTTPException(400, "Invalid status")
+    st.status = payload.status
+    db.commit()
+    return {"id": st.id, "status": st.status}
+
+
+@router.get("/{study_id}/progress")
+def progress(study_id: int, db: Session = Depends(get_db)):
+    st = db.query(Study).get(study_id)
+    if not st:
+        raise HTTPException(404, "Study not found")
+    pairs = db.query(StudyPair).filter(StudyPair.study_id == study_id).all()
+    pair_ids = [p.id for p in pairs]
+    ratings = db.query(Rating).filter(Rating.study_id == study_id).all()
+    raters = {r.rater_id for r in ratings}
+    total_expected = len(pair_ids) * 2 * max(len(raters), 1)
+    return {
+        "study_id": study_id,
+        "status": st.status,
+        "pairs": len(pair_ids),
+        "raters": len(raters),
+        "ratings_submitted": len(ratings),
+        "total_expected": total_expected,
+        "completion": (len(ratings) / total_expected) if total_expected else 0.0,
+    }
