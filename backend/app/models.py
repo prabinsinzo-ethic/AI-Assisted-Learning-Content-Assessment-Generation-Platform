@@ -13,7 +13,7 @@ class User(Base):
     username = Column(String(100), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
     salt = Column(String(64), nullable=False)
-    role = Column(String(50), default="teacher")  # teacher, reviewer, admin
+    role = Column(String(50), default="teacher")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def set_password(self, password: str):
@@ -46,7 +46,7 @@ class Chunk(Base):
     page_end = Column(Integer)
     text = Column(Text, nullable=False)
     token_count = Column(Integer, default=0)
-    embedding = Column(Text)  # JSON list
+    embedding = Column(Text)
     document = relationship("Document", back_populates="chunks")
 
 
@@ -54,16 +54,15 @@ class ContentItem(Base):
     __tablename__ = "content_items"
     id = Column(Integer, primary_key=True)
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
-    chunk_ids = Column(Text)  # JSON list
-    item_type = Column(String(50), nullable=False)  # summary|flashcard|mcq|short_answer
-    payload = Column(Text, nullable=False)  # JSON
+    chunk_ids = Column(Text)
+    item_type = Column(String(50), nullable=False)
+    payload = Column(Text, nullable=False)
     bloom_level = Column(String(50))
     quality_score = Column(Float)
     status = Column(String(50), default="draft")
     version = Column(Integer, default=1)
     created_by = Column(String(50), default="ai")
     created_at = Column(DateTime, default=datetime.utcnow)
-    # provenance / lineage
     model = Column(String(100))
     prompt_version = Column(String(50))
     temperature = Column(Float)
@@ -75,3 +74,24 @@ class ContentItem(Base):
 
     def payload_obj(self):
         return json.loads(self.payload)
+
+
+class GenerationJob(Base):
+    __tablename__ = "generation_jobs"
+    id = Column(String(64), primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    requested_types = Column(Text, default="[]")
+    params = Column(Text, default="{}")
+    status = Column(String(50), default="queued")
+    progress = Column(Float, default=0.0)
+    message = Column(Text)
+    result_ids = Column(Text, default="[]")
+    cancel_requested = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    def types_list(self):
+        return json.loads(self.requested_types or "[]")
+
+    def result_list(self):
+        return json.loads(self.result_ids or "[]")

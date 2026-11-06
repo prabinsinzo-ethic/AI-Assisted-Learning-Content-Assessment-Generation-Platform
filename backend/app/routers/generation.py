@@ -1,54 +1,101 @@
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 
-from ..db import get_db
+from ..db import get_db, SessionLocal
+from ..models import GenerationJob, ContentItem
 from ..schemas import GenerateRequest, JobStatus
-from ..services.generation import generate_summaries, generate_flashcards, generate_mcqs, generate_short_answers, generate_answer_keys
+from ..services.generation import (
+    generate_summaries, generate_flashcards, generate_mcqs,
+    generate_short_answers, generate_answer_keys,
+)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
-# in-memory job store
-_JOBS = {}
+GENERATORS = {
+    "summary": (generate_summaries, True),
+    "flashcard": (generate_flashcards, True),
+    "mcq": (generate_mcqs, True),
+    "short_answer": (generate_short_answers, True),
+    "answer_key": (generate_answer_keys, False),
+}
+
+
+def _run_job(job_id: str, db_factory):
+    db = db_factory()
+    try:
+        job = db.query(GenerationJob).get(job_id)
+        if not job:
+            return
+        types = job.types_list()
+        items_per_chunk = (job.params and __import__("json").loads(job.params).get("items_per_chunk", 1)) or 1
+        job.status = "running"
+        db.commit()
+        total = len(types) or 1
+        results = []
+        for idx, t in enumerate(types):
+            # cancellation check
+            db.refresh(job)
+            if job.cancel_requested:
+                job.status = "cancelled"
+                db.commit()
+                return
+            gen, needs_items = GENERATORS.get(t, (None, False))
+            if gen is None:
+                continue
+            if needs_items:
+                ids = gen(db, job.document_id, items_per_chunk)
+            else:
+                ids = gen(db, job.document_id)
+            results.extend(ids)
+            job.result_ids = __import__("json").dumps(results)
+            job.progress = (idx + 1) / total
+            db.commit()
+        job.progress = 1.0
+        job.status = "done"
+        db.commit()
+    except Exception as e:
+        job = db.query(GenerationJob).get(job_id)
+        if job:
+            job.status = "failed"
+            job.message = str(e)
+            db.commit()
+    finally:
+        db.close()
 
 
 @router.post("/generate", response_model=JobStatus)
 def trigger_generate(req: GenerateRequest, bg: BackgroundTasks, db: Session = Depends(get_db)):
-    import uuid
     job_id = str(uuid.uuid4())
-    _JOBS[job_id] = {"status": "queued", "progress": 0.0, "result_ids": []}
-
-    def run():
-        try:
-            _JOBS[job_id]["status"] = "running"
-            if "summary" in req.types:
-                ids = generate_summaries(db, req.document_id, req.items_per_chunk)
-                _JOBS[job_id]["result_ids"].extend(ids)
-            if "flashcard" in req.types:
-                ids = generate_flashcards(db, req.document_id, req.items_per_chunk)
-                _JOBS[job_id]["result_ids"].extend(ids)
-            if "mcq" in req.types:
-                ids = generate_mcqs(db, req.document_id, req.items_per_chunk)
-                _JOBS[job_id]["result_ids"].extend(ids)
-            if "short_answer" in req.types:
-                ids = generate_short_answers(db, req.document_id, req.items_per_chunk)
-                _JOBS[job_id]["result_ids"].extend(ids)
-            if "answer_key" in req.types:
-                ids = generate_answer_keys(db, req.document_id)
-                _JOBS[job_id]["result_ids"].extend(ids)
-            _JOBS[job_id]["progress"] = 1.0
-            _JOBS[job_id]["status"] = "done"
-        except Exception as e:
-            _JOBS[job_id]["status"] = "failed"
-            _JOBS[job_id]["message"] = str(e)
-
-    bg.add_task(run)
+    import json
+    job = GenerationJob(
+        id=job_id,
+        document_id=req.document_id,
+        requested_types=json.dumps(req.types),
+        params=json.dumps({"items_per_chunk": req.items_per_chunk, "bloom_distribution": req.bloom_distribution}),
+        status="queued",
+        progress=0.0,
+    )
+    db.add(job)
+    db.commit()
+    bg.add_task(_run_job, job_id, SessionLocal)
     return JobStatus(job_id=job_id, status="queued", progress=0.0)
 
 
 @router.get("/{job_id}", response_model=JobStatus)
-def get_job(job_id: str):
-    j = _JOBS.get(job_id)
-    if not j:
+def get_job(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(GenerationJob).get(job_id)
+    if not job:
         raise HTTPException(404, "Job not found")
-    return JobStatus(job_id=job_id, status=j["status"], progress=j["progress"],
-                     message=j.get("message"), result_ids=j.get("result_ids", []))
+    return JobStatus(job_id=job.id, status=job.status, progress=job.progress,
+                     message=job.message, result_ids=job.result_list())
+
+
+@router.post("/{job_id}/cancel")
+def cancel_job(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(GenerationJob).get(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    job.cancel_requested = 1
+    db.commit()
+    return {"ok": True, "status": job.status}
