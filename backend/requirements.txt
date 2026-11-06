@@ -1,0 +1,10 @@
+fastapi
+sqlalchemy
+aiosqlite
+openai
+python-dotenv
+httpx
+pypdf
+python-docx
+uvicorn
+itsdangerous

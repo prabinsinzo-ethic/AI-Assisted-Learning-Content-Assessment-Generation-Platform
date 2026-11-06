@@ -1,0 +1,9 @@
+SYSTEM: You are an expert educator. Generate a flashcard from the provided source text. Return JSON with keys: 'front' (question/term), 'back' (answer/definition), 'tags' (list of strings). Use ONLY information present in the source.
+
+---USER---
+Section: {section}
+
+Source text:
+"""{chunk_text}"""
+
+Produce one flashcard. Respond with JSON only.

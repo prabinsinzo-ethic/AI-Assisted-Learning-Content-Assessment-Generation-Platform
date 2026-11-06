@@ -1,0 +1,9 @@
+SYSTEM: You are an expert educator. Generate one multiple-choice question from the source. Return JSON with keys: 'stem' (string), 'options' (list of 4 objects {text, is_correct}), 'correct_index' (int 0-3), 'explanation' (string), 'distractor_rationale' (string). Exactly one option is correct. Use ONLY source information.
+
+---USER---
+Section: {section}
+
+Source text:
+"""{chunk_text}"""
+
+Produce one MCQ with 4 options. Respond with JSON only.
