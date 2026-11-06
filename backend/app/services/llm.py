@@ -1,6 +1,9 @@
 import json
 import logging
 import os
+import struct
+import hashlib
+import math
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
@@ -9,7 +12,6 @@ from ..config import OPENAI_API_KEY, OPENAI_BASE_URL, LLM_MODEL, EMBED_MODEL, MO
 from ..logging_config import get_logger
 
 logger = get_logger("app.llm")
-
 
 _client = None
 
@@ -41,29 +43,11 @@ def chat_json(prompt: str, system: str = "", temperature: float = 0.7) -> Dict[s
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        # try to extract json
         start = raw.find("{")
         end = raw.rfind("}")
         if start != -1 and end != -1:
             return json.loads(raw[start:end + 1])
         raise
-
-
-def embed(texts: List[str]) -> List[List[float]]:
-    if MOCK_LLM or not OPENAI_API_KEY:
-        # deterministic pseudo-embedding using hashing
-        import hashlib, struct
-        out = []
-        for t in texts:
-            h = hashlib.sha256(t.encode()).digest()
-            vec = [struct.unpack("f", h[i:i + 4])[0] if i + 4 <= len(h) else 0.0 for i in range(0, 32, 4)]
-            # pad to 8 dims
-            while len(vec) < 8:
-                vec.append(0.0)
-            out.append(vec)
-        return out
-    resp = client().embeddings.create(model=EMBED_MODEL, input=texts)
-    return [d.embedding for d in resp.data]
 
 
 def chat_json_with_retry(prompt: str, system: str = "", validate=None, max_retries: int = 3, temperature: float = 0.7) -> Dict[str, Any]:
@@ -96,17 +80,23 @@ def chat_json_with_retry(prompt: str, system: str = "", validate=None, max_retri
                 continue
         return data
     raise ValueError(f"Failed to generate valid JSON after {max_retries} attempts: {last_err}")
-    import math
-    dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(x * x for x in b))
-    if na == 0 or nb == 0:
-        return 0.0
-    return dot / (na * nb)
+
+
+def embed(texts: List[str]) -> List[List[float]]:
+    if MOCK_LLM or not OPENAI_API_KEY:
+        out = []
+        for t in texts:
+            h = hashlib.sha256(t.encode()).digest()
+            vec = [struct.unpack("f", h[i:i + 4])[0] if i + 4 <= len(h) else 0.0 for i in range(0, 32, 4)]
+            while len(vec) < 8:
+                vec.append(0.0)
+            out.append(vec)
+        return out
+    resp = client().embeddings.create(model=EMBED_MODEL, input=texts)
+    return [d.embedding for d in resp.data]
 
 
 def cosine(a, b):
-    import math
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(x * x for x in b))
@@ -121,6 +111,8 @@ def _mock_chat(prompt: str, json_mode: bool) -> str:
         return json.dumps({"claims": ["The source states the main concept."]})
     if "supports/entails" in low or "fact-checker" in low:
         return json.dumps({"score": 0.9})
+    if "ambiguity" in low or "ambiguity_score" in low:
+        return json.dumps({"ambiguity_score": 1, "issues": []})
     if "summary" in low:
         return json.dumps({"summary": "This is a mock summary of the provided content.", "key_points": ["Point A", "Point B"]})
     if "flashcard" in low:
@@ -137,31 +129,5 @@ def _mock_chat(prompt: str, json_mode: bool) -> str:
     if "short" in low and "answer" in low:
         return json.dumps({"question": "Explain X.", "model_answer": "X is ...", "rubric": [{"criterion": "mentions X", "points": 1}], "max_points": 2})
     if "answer key" in low or "answer_key" in low:
-        return json.dumps({"answer": "mock answer", "grading_notes": "mock grading notes"})
-    return json.dumps({"result": "mock"})
-    # Minimal mock responses for testing without API key
-    low = prompt.lower()
-    if "atomic factual claims" in low:
-        return json.dumps({"claims": ["The source states the main concept."]})
-    if "supports/entails" in low or "fact-checker" in low:
-        return json.dumps({"score": 0.9})
-    if "summary" in low:
-        return json.dumps({"summary": "This is a mock summary of the provided content.", "key_points": ["Point A", "Point B"]}) if json_mode else "Mock summary."
-    if "flashcard" in prompt.lower():
-        return json.dumps({"front": "What is X?", "back": "X is Y."})
-    if "mcq" in prompt.lower() or "multiple choice" in prompt.lower():
-        return json.dumps({
-            "stem": "Which of the following is correct?",
-            "options": [{"text": "Option A", "is_correct": True}, {"text": "Option B", "is_correct": False},
-                        {"text": "Option C", "is_correct": False}, {"text": "Option D", "is_correct": False}],
-            "correct_index": 0,
-            "explanation": "Because A.",
-            "distractor_rationale": "B,C,D are wrong."
-        })
-    if "atomic factual claims" in prompt.lower():
-        return json.dumps({"claims": ["The source states the main concept."]})
-    if "supports/entails" in prompt.lower() or "fact-checker" in prompt.lower():
-        return json.dumps({"score": 0.9})
-    if "answer key" in prompt.lower() or "answer_key" in prompt.lower():
         return json.dumps({"answer": "mock answer", "grading_notes": "mock grading notes"})
     return json.dumps({"result": "mock"})

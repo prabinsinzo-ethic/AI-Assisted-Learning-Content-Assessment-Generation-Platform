@@ -85,6 +85,30 @@ def verify_item_factual(item: ContentItem, db: Session) -> Dict[str, Any]:
     }
 
 
+def detect_ambiguity(item: ContentItem) -> Dict[str, Any]:
+    p = item.payload_obj()
+    prompt = (
+        "Evaluate the following assessment item for ambiguity. Consider: "
+        "Is the question stem clear and unambiguous? Is there exactly one correct answer? "
+        "Are options mutually exclusive and exhaustive (for MCQ)? Is the rubric observable and non-overlapping (for short answer)?\n\n"
+        f"Item type: {item.item_type}\nItem: {json.dumps(p)}\n\n"
+        "Return JSON: {\"ambiguity_score\": 1-5 (1=clear, 5=very ambiguous), \"issues\": [\"...\"]}."
+    )
+    try:
+        data = chat_json(prompt, system="You are a strict assessment reviewer.")
+        score = int(data.get("ambiguity_score", 3))
+        score = max(1, min(5, score))
+        issues = data.get("issues", [])
+        if not isinstance(issues, list):
+            issues = []
+    except Exception as e:
+        logger.warning("Ambiguity detection failed: %s", e)
+        score = 3
+        issues = [str(e)]
+    passed = score <= 2
+    return {"ambiguity_score": score, "passed": passed, "issues": issues}
+
+
 def item_text(item: ContentItem) -> str:
     p = item.payload_obj()
     t = item.item_type
