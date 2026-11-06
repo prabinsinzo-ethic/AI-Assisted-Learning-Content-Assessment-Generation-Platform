@@ -85,6 +85,36 @@ def verify_item_factual(item: ContentItem, db: Session) -> Dict[str, Any]:
     }
 
 
+BLOOM_LEVELS = ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"]
+
+
+def classify_bloom(text: str) -> Dict[str, Any]:
+    prompt = (
+        "Classify the following assessment item into one Bloom's Taxonomy level: "
+        "Remember, Understand, Apply, Analyze, Evaluate, or Create.\n\n"
+        f"Item:\n{text}\n\n"
+        "Return JSON: {\"bloom_level\": \"...\", \"confidence\": 0.0-1.0}."
+    )
+    try:
+        data = chat_json(prompt, system="You are an expert in Bloom's Taxonomy.")
+        level = data.get("bloom_level", "Understand")
+        if level not in BLOOM_LEVELS:
+            level = "Understand"
+        conf = float(data.get("confidence", 0.5))
+        conf = max(0.0, min(1.0, conf))
+    except Exception as e:
+        logger.warning("Bloom classification failed: %s", e)
+        level = "Understand"
+        conf = 0.0
+    return {"bloom_level": level, "confidence": conf}
+
+
+def classify_item_bloom(item: ContentItem) -> Dict[str, Any]:
+    res = classify_bloom(json.dumps(item.payload_obj()))
+    item.bloom_level = res["bloom_level"]
+    return res
+
+
 def detect_ambiguity(item: ContentItem) -> Dict[str, Any]:
     p = item.payload_obj()
     prompt = (

@@ -6,7 +6,7 @@ from typing import List, Optional
 
 from ..db import get_db
 from ..models import ContentItem
-from ..services.quality import verify_item_factual, detect_duplicates, detect_ambiguity
+from ..services.quality import verify_item_factual, detect_duplicates, detect_ambiguity, classify_item_bloom, classify_bloom
 
 router = APIRouter(prefix="/qc", tags=["qc"])
 
@@ -26,8 +26,26 @@ class AmbiguityRequest(BaseModel):
     item_ids: Optional[List[int]] = None
 
 
-@router.post("/verify")
-def verify(req: VerifyRequest, db: Session = Depends(get_db)):
+class BloomRequest(BaseModel):
+    document_id: int
+    item_ids: Optional[List[int]] = None
+
+
+@router.post("/bloom")
+def bloom(req: BloomRequest, db: Session = Depends(get_db)):
+    q = db.query(ContentItem).filter(ContentItem.document_id == req.document_id)
+    if req.item_ids:
+        q = q.filter(ContentItem.id.in_(req.item_ids))
+    items = q.all()
+    results = []
+    for it in items:
+        res = classify_item_bloom(it)
+        details = json.loads(it.qc_details or "{}")
+        details["bloom"] = res
+        it.qc_details = json.dumps(details)
+        db.commit()
+        results.append({"item_id": it.id, "item_type": it.item_type, **res})
+    return {"classified": len(results), "results": results}
     q = db.query(ContentItem).filter(ContentItem.document_id == req.document_id)
     if req.item_ids:
         q = q.filter(ContentItem.id.in_(req.item_ids))

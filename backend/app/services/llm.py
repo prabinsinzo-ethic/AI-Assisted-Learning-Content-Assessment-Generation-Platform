@@ -113,6 +113,8 @@ def _mock_chat(prompt: str, json_mode: bool) -> str:
         return json.dumps({"score": 0.9})
     if "ambiguity" in low or "ambiguity_score" in low:
         return json.dumps({"ambiguity_score": 1, "issues": []})
+    if "bloom" in low or "bloom_level" in low or "taxonomy" in low:
+        return json.dumps({"bloom_level": "Understand", "confidence": 0.9})
     if "summary" in low:
         return json.dumps({"summary": "This is a mock summary of the provided content.", "key_points": ["Point A", "Point B"]})
     if "flashcard" in low:
@@ -128,6 +130,4 @@ def _mock_chat(prompt: str, json_mode: bool) -> str:
         })
     if "short" in low and "answer" in low:
         return json.dumps({"question": "Explain X.", "model_answer": "X is ...", "rubric": [{"criterion": "mentions X", "points": 1}], "max_points": 2})
-    if "answer key" in low or "answer_key" in low:
-        return json.dumps({"answer": "mock answer", "grading_notes": "mock grading notes"})
     return json.dumps({"result": "mock"})
