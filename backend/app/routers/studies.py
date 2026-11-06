@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from ..db import get_db
-from ..models import Study, StudyPair, StudyAssignment, Rating, ContentItem
+from ..models import Study, StudyPair, StudyAssignment, Rating, ContentItem, StudyRater, User
 
 router = APIRouter(prefix="/studies", tags=["studies"])
 
@@ -186,6 +186,47 @@ def results(study_id: int, db: Session = Depends(get_db)):
             "human": agg(human_scores),
         })
     return {"study_id": study_id, "pairs": out_pairs}
+
+
+class RaterIn(BaseModel):
+    rater_id: int
+
+
+@router.post("/{study_id}/raters")
+def enroll_rater(study_id: int, payload: RaterIn, db: Session = Depends(get_db)):
+    st = db.query(Study).get(study_id)
+    if not st:
+        raise HTTPException(404, "Study not found")
+    user = db.query(User).get(payload.rater_id)
+    if not user:
+        raise HTTPException(404, "Rater (user) not found")
+    existing = db.query(StudyRater).filter(StudyRater.study_id == study_id, StudyRater.rater_id == payload.rater_id).first()
+    if existing:
+        return {"ok": True, "already_enrolled": True}
+    sr = StudyRater(study_id=study_id, rater_id=payload.rater_id)
+    db.add(sr)
+    db.commit()
+    return {"ok": True, "enrolled": payload.rater_id}
+
+
+@router.get("/{study_id}/raters")
+def list_raters(study_id: int, db: Session = Depends(get_db)):
+    srs = db.query(StudyRater).filter(StudyRater.study_id == study_id).all()
+    out = []
+    for sr in srs:
+        u = db.query(User).get(sr.rater_id)
+        out.append({"rater_id": sr.rater_id, "username": u.username if u else None, "role": u.role if u else None, "enrolled_at": sr.enrolled_at.isoformat()})
+    return {"study_id": study_id, "raters": out}
+
+
+@router.delete("/{study_id}/raters/{rater_id}")
+def remove_rater(study_id: int, rater_id: int, db: Session = Depends(get_db)):
+    sr = db.query(StudyRater).filter(StudyRater.study_id == study_id, StudyRater.rater_id == rater_id).first()
+    if not sr:
+        raise HTTPException(404, "Enrollment not found")
+    db.delete(sr)
+    db.commit()
+    return {"ok": True}
 
 
 class PatchStudyIn(BaseModel):
