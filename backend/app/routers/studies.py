@@ -42,6 +42,19 @@ class RatingIn(BaseModel):
 def list_studies(db: Session = Depends(get_db)):
     studies = db.query(Study).order_by(Study.id.desc()).all()
     return [{"id": s.id, "name": s.name, "status": s.status, "created_at": s.created_at.isoformat()} for s in studies]
+
+
+@router.post("")
+def create_study(payload: StudyIn, db: Session = Depends(get_db)):
+    study = Study(name=payload.name, design=payload.design, status="active")
+    db.add(study)
+    db.commit()
+    db.refresh(study)
+    for p in payload.pairs:
+        sp = StudyPair(study_id=study.id, ai_item_id=p.ai_item_id, human_item_id=p.human_item_id)
+        db.add(sp)
+    db.commit()
+    return {"id": study.id, "name": study.name, "pairs": len(payload.pairs)}
     study = Study(name=payload.name, design=payload.design, status="active")
     db.add(study)
     db.commit()
