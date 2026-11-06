@@ -4,6 +4,7 @@ import os
 import struct
 import hashlib
 import math
+from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
@@ -23,19 +24,26 @@ def client() -> OpenAI:
     return _client
 
 
-def chat(prompt: str, system: str = "", json_mode: bool = False, temperature: float = 0.7) -> str:
+@lru_cache(maxsize=512)
+def _cached_chat(prompt: str, system: str, json_mode: bool, temperature: float) -> str:
     if MOCK_LLM or not OPENAI_API_KEY:
         logger.debug("Using mock LLM response")
         return _mock_chat(prompt, json_mode)
     kwargs = {"model": LLM_MODEL, "messages": [], "temperature": temperature}
+    msgs = []
     if system:
-        kwargs["messages"].append({"role": "system", "content": system})
-    kwargs["messages"].append({"role": "user", "content": prompt})
+        msgs.append({"role": "system", "content": system})
+    msgs.append({"role": "user", "content": prompt})
+    kwargs["messages"] = msgs
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
     logger.debug("LLM call model=%s json_mode=%s", LLM_MODEL, json_mode)
     resp = client().chat.completions.create(**kwargs)
     return resp.choices[0].message.content or ""
+
+
+def chat(prompt: str, system: str = "", json_mode: bool = False, temperature: float = 0.7) -> str:
+    return _cached_chat(prompt, system, json_mode, temperature)
 
 
 def chat_json(prompt: str, system: str = "", temperature: float = 0.7) -> Dict[str, Any]:
@@ -82,16 +90,21 @@ def chat_json_with_retry(prompt: str, system: str = "", validate=None, max_retri
     raise ValueError(f"Failed to generate valid JSON after {max_retries} attempts: {last_err}")
 
 
+@lru_cache(maxsize=512)
+def _cached_embed_one(text: str) -> tuple:
+    if MOCK_LLM or not OPENAI_API_KEY:
+        h = hashlib.sha256(text.encode()).digest()
+        vec = [struct.unpack("f", h[i:i + 4])[0] if i + 4 <= len(h) else 0.0 for i in range(0, 32, 4)]
+        while len(vec) < 8:
+            vec.append(0.0)
+        return tuple(vec)
+    # real embedding handled in batch; fallback not cached per-text for real
+    return tuple()
+
+
 def embed(texts: List[str]) -> List[List[float]]:
     if MOCK_LLM or not OPENAI_API_KEY:
-        out = []
-        for t in texts:
-            h = hashlib.sha256(t.encode()).digest()
-            vec = [struct.unpack("f", h[i:i + 4])[0] if i + 4 <= len(h) else 0.0 for i in range(0, 32, 4)]
-            while len(vec) < 8:
-                vec.append(0.0)
-            out.append(vec)
-        return out
+        return [list(_cached_embed_one(t)) for t in texts]
     resp = client().embeddings.create(model=EMBED_MODEL, input=texts)
     return [d.embedding for d in resp.data]
 
