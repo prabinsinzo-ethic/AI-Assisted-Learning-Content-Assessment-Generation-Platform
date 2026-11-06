@@ -147,7 +147,134 @@ def _valid_mcq(p: dict) -> bool:
         return False
     return True
 
-def generate_summaries(db: Session, document_id: int, items_per_chunk: int = 1) -> List[int]:
+SHORT_ANSWER_SYSTEM = (
+    "You are an expert educator. Generate one short-answer question from the source. "
+    "Return JSON with keys: 'question' (string), 'model_answer' (string), "
+    "'rubric' (list of {criterion, points}), 'max_points' (int). Use ONLY source information."
+)
+
+
+def _short_answer_prompt(chunk_text: str, section: str) -> str:
+    return (
+        f"Section: {section}\n\nSource text:\n\"\"\"{chunk_text}\"\"\"\n\n"
+        "Produce one short-answer question with rubric. Respond with JSON only."
+    )
+
+
+def generate_short_answers(db: Session, document_id: int, items_per_chunk: int = 1) -> List[int]:
+    doc = db.query(Document).get(document_id)
+    if not doc:
+        logger.error("Document %s not found", document_id)
+        raise ValueError("Document not found")
+    logger.info("Generating short-answer questions for document %s (%d chunks)", document_id, len(doc.chunks))
+    created_ids = []
+    for chunk in sorted(doc.chunks, key=lambda c: c.order_index):
+        for _ in range(items_per_chunk):
+            tmpl = render(load_template("short_answer"), section=chunk.section or "", chunk_text=chunk.text)
+            payload = chat_json(tmpl["user"], system=tmpl["system"])
+            if not _valid_short_answer(payload):
+                payload = {
+                    "question": "Explain the main concept described.",
+                    "model_answer": chunk.text[:200],
+                    "rubric": [{"criterion": "mentions key concept", "points": 1}],
+                    "max_points": 2,
+                }
+            item = ContentItem(
+                document_id=document_id,
+                chunk_ids=json.dumps([chunk.id]),
+                item_type="short_answer",
+                payload=json.dumps(payload),
+                bloom_level="Apply",
+                quality_score=None,
+                status="draft",
+                created_by="ai",
+            )
+            db.add(item)
+            db.commit()
+            db.refresh(item)
+            created_ids.append(item.id)
+            logger.debug("Created short-answer item %s for chunk %s", item.id, chunk.id)
+    logger.info("Created %d short-answer items for document %s", len(created_ids), document_id)
+    return created_ids
+
+
+def _valid_short_answer(p: dict) -> bool:
+    if not isinstance(p, dict):
+        return False
+    if not all(k in p for k in ("question", "model_answer", "rubric", "max_points")):
+        return False
+    if not isinstance(p["rubric"], list):
+        return False
+    if not isinstance(p["max_points"], int):
+        return False
+    return True
+
+ANSWER_KEY_SYSTEM = (
+    "You are an expert educator. Given an assessment item and its source, produce an answer key. "
+    "Return JSON with keys: 'answer' (string), 'grading_notes' (string)."
+)
+
+
+def generate_answer_keys(db: Session, document_id: int) -> List[int]:
+    doc = db.query(Document).get(document_id)
+    if not doc:
+        logger.error("Document %s not found", document_id)
+        raise ValueError("Document not found")
+    items = db.query(ContentItem).filter(ContentItem.document_id == document_id).all()
+    logger.info("Generating answer keys for document %s (%d items)", document_id, len(items))
+    created_ids = []
+    for it in items:
+        if it.item_type == "answer_key":
+            continue
+        # gather source text
+        chunk_ids = it.chunk_id_list()
+        chunk = db.query(Chunk).get(chunk_ids[0]) if chunk_ids else None
+        source = chunk.text if chunk else ""
+        tmpl = render(load_template("answer_key"), item_type=it.item_type, payload=it.payload, chunk_text=source)
+        payload_llm = chat_json(tmpl["user"], system=tmpl["system"])
+        answer = payload_llm.get("answer")
+        grading_notes = payload_llm.get("grading_notes", "")
+        if not answer:
+            # fallback derive
+            p = it.payload_obj()
+            if it.item_type == "mcq":
+                opts = p.get("options", [])
+                correct = [o["text"] for o in opts if o.get("is_correct")]
+                answer = correct[0] if correct else ""
+                grading_notes = p.get("explanation", "")
+            elif it.item_type == "short_answer":
+                answer = p.get("model_answer", "")
+                grading_notes = "Award points per rubric."
+            elif it.item_type == "flashcard":
+                answer = p.get("back", "")
+                grading_notes = ""
+            elif it.item_type == "summary":
+                answer = p.get("summary", "")
+                grading_notes = "; ".join(p.get("key_points", []))
+            else:
+                answer = str(p)
+        ak_payload = {
+            "item_id": it.id,
+            "answer": answer,
+            "grading_notes": grading_notes,
+        }
+        item = ContentItem(
+            document_id=document_id,
+            chunk_ids=json.dumps(chunk_ids),
+            item_type="answer_key",
+            payload=json.dumps(ak_payload),
+            bloom_level=it.bloom_level,
+            quality_score=None,
+            status="draft",
+            created_by="ai",
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+        created_ids.append(item.id)
+        logger.debug("Created answer key %s for item %s", item.id, it.id)
+    logger.info("Created %d answer key items for document %s", len(created_ids), document_id)
+    return created_ids
     doc = db.query(Document).get(document_id)
     if not doc:
         logger.error("Document %s not found", document_id)

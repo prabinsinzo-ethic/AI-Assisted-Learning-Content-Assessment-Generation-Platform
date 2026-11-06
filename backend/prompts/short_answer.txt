@@ -1,0 +1,9 @@
+SYSTEM: You are an expert educator. Generate one short-answer question from the source. Return JSON with keys: 'question' (string), 'model_answer' (string), 'rubric' (list of {criterion, points}), 'max_points' (int). Use ONLY source information.
+
+---USER---
+Section: {section}
+
+Source text:
+"""{chunk_text}"""
+
+Produce one short-answer question with rubric. Respond with JSON only.

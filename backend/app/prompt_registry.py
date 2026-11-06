@@ -25,7 +25,10 @@ def load_template(name: str) -> Dict[str, str]:
 
 
 def render(template: Dict[str, str], **kwargs) -> Dict[str, str]:
-    return {
-        "system": template["system"].format(**kwargs),
-        "user": template["user"].format(**kwargs),
-    }
+    out = {}
+    for key in ("system", "user"):
+        text = template[key]
+        for k, v in kwargs.items():
+            text = text.replace("{" + k + "}", str(v))
+        out[key] = text
+    return out
