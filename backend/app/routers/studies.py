@@ -35,6 +35,7 @@ class RatingIn(BaseModel):
     overall: Optional[int] = None
     would_use: Optional[int] = None
     comments: Optional[str] = None
+    started_at: Optional[str] = None
 
 
 @router.get("")
@@ -119,8 +120,11 @@ def submit_rating(study_id: int, payload: RatingIn, db: Session = Depends(get_db
         Rating.blinded_label == payload.blinded_label,
     ).first()
     if existing:
-        for field in ["accuracy", "clarity", "difficulty", "distractor_quality", "bloom_alignment", "overall", "would_use", "comments", "item_id"]:
-            setattr(existing, field, getattr(payload, field))
+        for field in ["accuracy", "clarity", "difficulty", "distractor_quality", "bloom_alignment", "overall", "would_use", "comments", "item_id", "started_at"]:
+            if field == "started_at":
+                setattr(existing, field, __import__("datetime").datetime.fromisoformat(payload.started_at) if payload.started_at else existing.started_at)
+            else:
+                setattr(existing, field, getattr(payload, field))
         db.commit()
         db.refresh(existing)
         return {"id": existing.id, "ok": True, "updated": True}
@@ -137,6 +141,7 @@ def submit_rating(study_id: int, payload: RatingIn, db: Session = Depends(get_db
         bloom_alignment=payload.bloom_alignment,
         overall=payload.overall,
         would_use=payload.would_use,
+        started_at=__import__("datetime").datetime.fromisoformat(payload.started_at) if payload.started_at else None,
         comments=payload.comments,
     )
     db.add(rating)
@@ -186,6 +191,42 @@ def results(study_id: int, db: Session = Depends(get_db)):
             "human": agg(human_scores),
         })
     return {"study_id": study_id, "pairs": out_pairs}
+
+
+@router.get("/{study_id}/monitoring")
+def monitoring(study_id: int, db: Session = Depends(get_db)):
+    st = db.query(Study).get(study_id)
+    if not st:
+        raise HTTPException(404, "Study not found")
+    pairs = db.query(StudyPair).filter(StudyPair.study_id == study_id).all()
+    ratings = db.query(Rating).filter(Rating.study_id == study_id).all()
+    enrolled = db.query(StudyRater).filter(StudyRater.study_id == study_id).all()
+    # per rater stats
+    rater_stats = {}
+    for sr in enrolled:
+        rater_stats[sr.rater_id] = {"rater_id": sr.rater_id, "ratings": 0, "completed": False}
+    for r in ratings:
+        if r.rater_id not in rater_stats:
+            rater_stats[r.rater_id] = {"rater_id": r.rater_id, "ratings": 0, "completed": False}
+        rater_stats[r.rater_id]["ratings"] += 1
+    # durations
+    durations = []
+    for r in ratings:
+        if r.started_at and r.created_at:
+            durations.append((r.created_at - r.started_at).total_seconds())
+    avg_duration = (sum(durations) / len(durations)) if durations else None
+    # dropouts: enrolled raters with 0 ratings
+    dropouts = [rid for rid, s in rater_stats.items() if s["ratings"] == 0]
+    return {
+        "study_id": study_id,
+        "status": st.status,
+        "pairs": len(pairs),
+        "enrolled_raters": len(enrolled),
+        "total_ratings": len(ratings),
+        "rater_stats": list(rater_stats.values()),
+        "dropouts": dropouts,
+        "avg_seconds_per_rating": avg_duration,
+    }
 
 
 class RaterIn(BaseModel):

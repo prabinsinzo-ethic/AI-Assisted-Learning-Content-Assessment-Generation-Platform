@@ -39,3 +39,12 @@ def init_db():
         with engine.begin() as conn:
             for a in alters:
                 conn.execute(text(a))
+    # ratings table migration
+    if "ratings" in insp.get_table_names():
+        rcols = {c["name"] for c in insp.get_columns("ratings")}
+        ralters = []
+        if "started_at" not in rcols:
+            ralters.append("ALTER TABLE ratings ADD COLUMN started_at DATETIME")
+        with engine.begin() as conn:
+            for a in ralters:
+                conn.execute(text(a))
