@@ -21,14 +21,45 @@ def list_items(document_id: int = None, item_type: str = None, status: str = Non
     out = []
     for it in items:
         import json
+        from ..models import Document, Chunk
+        doc = db.query(Document).get(it.document_id)
+        chunks = [db.query(Chunk).get(cid) for cid in it.chunk_id_list()]
+        chunks = [c for c in chunks if c]
+        section = chunks[0].section if chunks else None
+        pages = None
+        if chunks:
+            ps = min((c.page_start for c in chunks if c.page_start is not None), default=None)
+            pe = max((c.page_end for c in chunks if c.page_end is not None), default=None)
+            if ps is not None and pe is not None:
+                pages = f"{ps}-{pe}" if ps != pe else str(ps)
+            elif ps is not None:
+                pages = str(ps)
         out.append(ContentItemOut(
             id=it.id, document_id=it.document_id, chunk_ids=it.chunk_id_list(),
             item_type=it.item_type, payload=it.payload_obj(), bloom_level=it.bloom_level,
             quality_score=it.quality_score, status=it.status, version=it.version,
             created_by=it.created_by, created_at=it.created_at.isoformat(),
             model=it.model, prompt_version=it.prompt_version, temperature=it.temperature,
-            parent_item_id=it.parent_item_id))
+            parent_item_id=it.parent_item_id,
+            source_document=doc.title if doc else None,
+            source_section=section,
+            source_pages=pages))
     return out
+
+
+@router.post("/bulk-approve")
+def bulk_approve(payload: dict, db: Session = Depends(get_db)):
+    doc_id = payload.get("document_id")
+    min_q = payload.get("min_quality", 0.8)
+    q = db.query(ContentItem).filter(ContentItem.document_id == doc_id, ContentItem.status == "draft")
+    items = q.all()
+    approved = 0
+    for it in items:
+        if (it.quality_score or 0) >= min_q:
+            it.status = "approved"
+            approved += 1
+    db.commit()
+    return {"approved": approved}
 
 
 @router.get("/{item_id}/versions")
@@ -77,6 +108,7 @@ def item_versions(item_id: int, db: Session = Depends(get_db)):
             model=it.model, prompt_version=it.prompt_version, temperature=it.temperature,
             parent_item_id=it.parent_item_id))
     return out
+
 def update_item(item_id: int, payload: dict, db: Session = Depends(get_db)):
     it = db.query(ContentItem).get(item_id)
     if not it:

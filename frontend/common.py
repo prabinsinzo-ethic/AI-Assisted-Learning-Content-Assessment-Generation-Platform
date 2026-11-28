@@ -2,12 +2,23 @@ import os
 import requests
 import streamlit as st
 
-API = os.getenv("API_URL", "http://127.0.0.1:8001")
+if "API_URL" not in st.session_state:
+    st.session_state["API_URL"] = os.getenv("API_URL", "http://127.0.0.1:8001")
+if "dark_mode" not in st.session_state:
+    st.session_state["dark_mode"] = False
+if "mode" not in st.session_state:
+    st.session_state["mode"] = "Learner"
+
+API = st.session_state["API_URL"]
+
+
+def get_api():
+    return st.session_state.get("API_URL", "http://127.0.0.1:8001")
 
 
 def api_health():
     try:
-        r = requests.get(f"{API}/health", timeout=3)
+        r = requests.get(f"{get_api()}/health", timeout=3)
         return r.ok
     except Exception:
         return False
@@ -17,7 +28,7 @@ def render_item(it):
     p = it.get("payload", {})
     t = it.get("item_type")
     status = it.get("status", "draft")
-    st.markdown(f"**{t.upper()}** — _{status}_")
+    st.markdown(f"**{t.upper().replace('_',' ')}** — _{status}_")
     if t == "summary":
         st.markdown(f"**Summary:** {p.get('summary','')}")
         for k in p.get("key_points", []):
@@ -51,6 +62,25 @@ def render_item(it):
             st.caption(f"Grading notes: {p.get('grading_notes')}")
     else:
         st.json(p)
+    # source traceability
+    src = it.get("source_document")
+    if src:
+        with st.expander("📎 View source excerpt"):
+            st.write(f"Document: **{src}**")
+            if it.get("source_section"):
+                st.write(f"Section: {it.get('source_section')}")
+            if it.get("source_pages"):
+                st.write(f"Pages: {it.get('source_pages')}")
+            # fetch chunk text
+            try:
+                chunks = requests.get(f"{get_api()}/documents/{it['document_id']}/chunks").json()
+                ids = it.get("chunk_ids", [])
+                for cid in ids:
+                    ch = next((c for c in chunks if c["id"] == cid), None)
+                    if ch:
+                        st.code(ch["text"][:500], language=None)
+            except Exception:
+                pass
     st.caption(f"Bloom: {it.get('bloom_level')} | Quality: {it.get('quality_score')} | Model: {it.get('model')}")
 
 
@@ -63,22 +93,17 @@ def sidebar():
     st.sidebar.title("📚 AI Learning")
     st.sidebar.caption("Content & Assessment Platform")
     st.sidebar.divider()
-    st.sidebar.markdown("**Connection**")
+    mode = st.sidebar.radio("Mode", ["Learner", "Creator / Reviewer"], index=0 if st.session_state["mode"]=="Learner" else 1)
+    st.session_state["mode"] = mode
+    st.sidebar.divider()
+    if st.session_state["mode"] == "Creator / Reviewer":
+        nav = ["🏠 Dashboard", "📄 Documents", "✅ Review Queue", "📚 Items", "🧪 Rating Study", "📖 Study Mode", "📊 Analytics", "⚙️ Settings"]
+    else:
+        nav = ["🏠 Dashboard", "📖 Study Mode", "📊 Analytics", "⚙️ Settings"]
+    page = st.sidebar.radio("Navigate", nav, label_visibility="collapsed")
+    st.session_state["page"] = page.split(" ", 1)[1]
+    st.sidebar.divider()
     if api_health():
         st.sidebar.success("API connected")
     else:
         st.sidebar.error("API unreachable")
-    api_url = st.sidebar.text_input("API URL", value=API)
-    if api_url != API:
-        os.environ["API_URL"] = api_url
-        # update module global
-        import common
-        common.API = api_url
-    st.sidebar.divider()
-    dark = st.sidebar.toggle("🌙 Dark mode", value=st.session_state.get("dark_mode", False))
-    st.session_state["dark_mode"] = dark
-    if dark:
-        st.markdown("""<style>
-            .stApp { background-color: #0e1117; color: #fafafa; }
-            h1,h2,h3 { color: #fafafa; }
-        </style>""", unsafe_allow_html=True)

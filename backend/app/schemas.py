@@ -104,6 +104,9 @@ class ContentItemOut(BaseModel):
     prompt_version: Optional[str] = None
     temperature: Optional[float] = None
     parent_item_id: Optional[int] = None
+    source_document: Optional[str] = None
+    source_section: Optional[str] = None
+    source_pages: Optional[str] = None
 
 
 class GenerateRequest(BaseModel):
