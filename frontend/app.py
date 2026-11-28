@@ -3,30 +3,48 @@ import requests
 import time
 import json as _json
 import streamlit as st
+import streamlit.components.v1 as components
 from common import sidebar, render_item, empty_state
 
 st.set_page_config(page_title="AI Learning Content Platform", layout="wide", page_icon="📚")
 API = __import__("common").API
 
-# Custom CSS
+# ---------- Custom CSS ----------
 st.markdown("""
 <style>
     .main .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1200px; }
     h1, h2, h3 { color: #1f3864; }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] { border-radius: 8px 8px 0 0; padding: 8px 16px; }
-    .item-card { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px;
-                 padding: 16px; margin-bottom: 12px; }
+    .stTabs [data-baseweb="tab"] { border-radius: 8px 8px 0 0; padding: 10px 18px; font-weight: 600; }
+    .card { background: #ffffff; border: 1px solid #e0e0e0; border-radius: 14px;
+            padding: 24px; margin: 12px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .flashcard { perspective: 1000px; min-height: 200px; }
+    .flashcard-inner { position: relative; width: 100%; min-height: 200px; text-align: center;
+                       transition: transform 0.6s; transform-style: preserve-3d; }
+    .flashcard.flipped .flashcard-inner { transform: rotateY(180deg); }
+    .flashcard-front, .flashcard-back { position: absolute; width: 100%; min-height: 200px;
+        backface-visibility: hidden; border-radius: 14px; padding: 24px; display: flex;
+        align-items: center; justify-content: center; font-size: 1.2rem; }
+    .flashcard-front { background: #e7f1ff; color: #0d6efd; }
+    .flashcard-back { background: #d4edda; color: #155724; transform: rotateY(180deg); }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem;
+             font-weight: 600; margin-right: 6px; }
+    .badge-draft { background: #fff3cd; color: #856404; }
+    .badge-approved { background: #d4edda; color: #155724; }
+    .badge-rejected { background: #f8d7da; color: #721c24; }
+    .empty-state { text-align: center; padding: 50px; color: #888; }
+    .metric-card { background: white; border-radius: 12px; padding: 14px; text-align: center;
+                   border: 1px solid #eee; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 </style>
 """, unsafe_allow_html=True)
 
 sidebar()
 
 st.title("📚 AI Learning Content & Assessment Platform")
-st.caption("Generate, review, and export AI-assisted study materials from your course documents.")
+st.caption("Upload, generate, study, and track your learning progress.")
 
 page = st.sidebar.radio("Navigate", [
-    "🏠 Dashboard", "📄 Documents", "✅ Review Queue", "📚 Items",
+    "🏠 Dashboard", "📄 Upload & Study", "✅ Review Queue", "📚 Items",
     "🧪 Rating Study", "📖 Study Mode", "⚙️ Settings"
 ])
 
@@ -46,19 +64,18 @@ if page == "🏠 Dashboard":
     st.divider()
     st.subheader("Quick Start")
     st.markdown("""
-    - **Documents**: upload files and generate content
-    - **Review Queue**: approve/reject items
+    - **Upload & Study**: upload files, generate content, and study in one place
+    - **Review Queue**: approve or reject generated items
     - **Items**: browse, edit, view versions
-    - **Quality Control**: run QC checks
     - **Rating Study**: blind evaluation
     - **Study Mode**: flashcards and quizzes
     """)
     if not docs:
         empty_state("No documents yet", "Upload your first textbook or notes to get started.")
 
-# ---------- Documents ----------
-elif page == "📄 Documents":
-    st.header("Documents")
+# ---------- Upload & Study Workspace ----------
+elif page == "📄 Upload & Study":
+    st.header("Upload & Study Workspace")
     title = st.text_input("Title")
     uploaded = st.file_uploader("File", type=["txt", "pdf", "docx"])
     if st.button("Upload") and uploaded and title:
@@ -66,27 +83,29 @@ elif page == "📄 Documents":
         r = requests.post(f"{API}/documents", data={"title": title}, files=files)
         if r.ok:
             st.success(f"Uploaded document #{r.json()['id']}")
-            st.rerun()
+            st.session_state["selected_doc"] = r.json()["id"]
         else:
             st.error(r.text)
-    st.subheader("Or ingest from URL / YouTube")
-    url_title = st.text_input("Title (optional)", key="url_title")
-    url_val = st.text_input("URL", key="url_val")
-    c1, c2 = st.columns(2)
-    if c1.button("Ingest URL"):
-        r = requests.post(f"{API}/documents/url", json={"url": url_val, "title": url_title or None})
-        if r.ok:
-            st.success(f"Ingested document #{r.json()['id']}")
-            st.rerun()
-        else:
-            st.error(r.text)
-    if c2.button("Ingest YouTube"):
-        r = requests.post(f"{API}/documents/youtube", json={"url": url_val, "title": url_title or None})
-        if r.ok:
-            st.success(f"Ingested document #{r.json()['id']}")
-            st.rerun()
-        else:
-            st.error(r.text)
+    # URL/YouTube
+    with st.expander("Or ingest from URL / YouTube"):
+        url_title = st.text_input("Title (optional)", key="url_title")
+        url_val = st.text_input("URL", key="url_val")
+        c1, c2 = st.columns(2)
+        if c1.button("Ingest URL"):
+            r = requests.post(f"{API}/documents/url", json={"url": url_val, "title": url_title or None})
+            if r.ok:
+                st.success(f"Ingested document #{r.json()['id']}")
+                st.session_state["selected_doc"] = r.json()["id"]
+            else:
+                st.error(r.text)
+        if c2.button("Ingest YouTube"):
+            r = requests.post(f"{API}/documents/youtube", json={"url": url_val, "title": url_title or None})
+            if r.ok:
+                st.success(f"Ingested document #{r.json()['id']}")
+                st.session_state["selected_doc"] = r.json()["id"]
+            else:
+                st.error(r.text)
+
     st.divider()
     try:
         docs = requests.get(f"{API}/documents").json()
@@ -97,14 +116,20 @@ elif page == "📄 Documents":
         empty_state("No documents", "Upload a file to begin.")
     else:
         doc_map = {f"{d['id']}: {d['title']}": d["id"] for d in docs}
-        selected_doc_label = st.selectbox("Select document", list(doc_map.keys()))
+        default_label = None
+        if "selected_doc" in st.session_state:
+            for lbl, did in doc_map.items():
+                if did == st.session_state["selected_doc"]:
+                    default_label = lbl
+        selected_doc_label = st.selectbox("Select document", list(doc_map.keys()),
+                                         index=list(doc_map.keys()).index(default_label) if default_label else 0)
         selected_doc = doc_map[selected_doc_label]
-        st.write(f"Document ID: **{selected_doc}**")
         try:
             chunks = requests.get(f"{API}/documents/{selected_doc}/chunks").json()
             st.info(f"{len(chunks)} chunks extracted")
         except Exception:
             chunks = []
+
         st.subheader("Generate Content")
         types = st.multiselect("Content types", ["summary", "flashcard", "mcq", "short_answer", "answer_key"])
         items_per = st.number_input("Items per chunk", min_value=1, max_value=5, value=1)
@@ -129,6 +154,92 @@ elif page == "📄 Documents":
                         st.success(f"Done! Created {len(s.get('result_ids', []))} items.")
                     else:
                         st.error(s.get("message", "Failed"))
+                else:
+                    st.error(r.text)
+
+        # Study tabs
+        st.divider()
+        try:
+            items = requests.get(f"{API}/items", params={"document_id": selected_doc}).json()
+        except Exception:
+            items = []
+        tabs = st.tabs(["Summary", "Flashcards", "MCQ Quiz", "Short Questions", "AI Tutor"])
+        with tabs[0]:
+            sums = [i for i in items if i["item_type"] == "summary"]
+            if not sums:
+                empty_state("No summaries", "Generate summary content first.")
+            for it in sums:
+                render_item(it)
+        with tabs[1]:
+            cards = [i for i in items if i["item_type"] == "flashcard"]
+            if not cards:
+                empty_state("No flashcards", "Generate flashcard content first.")
+            for it in cards:
+                p = it["payload"]
+                st.markdown(f'<div class="flashcard"><div class="flashcard-inner">'
+                            f'<div class="flashcard-front">{p.get("front","")}</div>'
+                            f'<div class="flashcard-back">{p.get("back","")}</div>'
+                            f'</div></div>', unsafe_allow_html=True)
+                st.caption("Hover to flip (CSS) — use Study Mode for interactive review.")
+        with tabs[2]:
+            mcqs = [i for i in items if i["item_type"] == "mcq"]
+            if not mcqs:
+                empty_state("No MCQs", "Generate MCQ content first.")
+            for it in mcqs:
+                p = it["payload"]
+                st.markdown(f"**{p.get('stem','')}**")
+                for i, o in enumerate(p.get("options", [])):
+                    if o.get("is_correct"):
+                        st.success(f"✅ {chr(65+i)}. {o.get('text','')}")
+                    else:
+                        st.write(f"• {chr(65+i)}. {o.get('text','')}")
+                if p.get("explanation"):
+                    st.caption(f"Explanation: {p.get('explanation')}")
+        with tabs[3]:
+            sas = [i for i in items if i["item_type"] == "short_answer"]
+            if not sas:
+                empty_state("No short questions", "Generate short-answer content first.")
+            for it in sas:
+                p = it["payload"]
+                st.markdown(f"**Q:** {p.get('question','')}")
+                st.markdown(f"**Model answer:** {p.get('model_answer','')}")
+                ans = st.text_area("Your answer", key=f"sa_{it['id']}")
+                if st.button("Grade", key=f"grade_{it['id']}"):
+                    r = requests.post(f"{API}/study-suite/grade", json={
+                        "question": p.get("question", ""), "model_answer": p.get("model_answer", ""),
+                        "rubric": p.get("rubric", []), "max_points": p.get("max_points", 1),
+                        "student_answer": ans,
+                    })
+                    if r.ok:
+                        d = r.json()
+                        st.success(f"Score: {d['score']}/{d['max_points']}")
+                        st.write(d.get("feedback", ""))
+                    else:
+                        st.error(r.text)
+        with tabs[4]:
+            st.markdown("Ask questions about your uploaded material.")
+            if "chat_history" not in st.session_state:
+                st.session_state["chat_history"] = []
+            for msg in st.session_state["chat_history"]:
+                with st.chat_message(msg["role"]):
+                    st.write(msg["content"])
+            if prompt := st.chat_input("Ask the tutor..."):
+                st.session_state["chat_history"].append({"role": "user", "content": prompt})
+                with st.chat_message("user"):
+                    st.write(prompt)
+                r = requests.post(f"{API}/study-suite/chat", json={
+                    "document_id": selected_doc, "message": prompt,
+                    "history": st.session_state["chat_history"][:-1],
+                })
+                if r.ok:
+                    d = r.json()
+                    reply = d.get("answer", "")
+                    sources = d.get("sources", [])
+                    st.session_state["chat_history"].append({"role": "assistant", "content": reply})
+                    with st.chat_message("assistant"):
+                        st.write(reply)
+                        if sources:
+                            st.caption(f"Sources: {sources}")
                 else:
                     st.error(r.text)
 
