@@ -1,4 +1,6 @@
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import requests
 import time
 import json as _json
