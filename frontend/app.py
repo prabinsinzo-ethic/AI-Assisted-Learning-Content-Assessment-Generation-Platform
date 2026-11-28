@@ -57,7 +57,7 @@ with st.sidebar:
         os.environ["API_URL"] = api_url
         API = api_url
 
-tab_docs, tab_review, tab_items, tab_qc, tab_study = st.tabs(["Documents", "Review Queue", "Items", "Quality Control", "Rating Study"])
+tab_docs, tab_review, tab_items, tab_qc, tab_study, tab_student = st.tabs(["Documents", "Review Queue", "Items", "Quality Control", "Rating Study", "Study Mode"])
 
 # --- Documents tab ---
 with tab_docs:
@@ -93,27 +93,30 @@ with tab_docs:
         # generation
         st.subheader("Generate")
         types = st.multiselect("Types", ["summary", "flashcard", "mcq", "short_answer", "answer_key"],
-                               default=["summary"])
+                               default=[])
         items_per = st.number_input("Items per chunk", min_value=1, max_value=5, value=1)
         if st.button("Generate"):
-            r = requests.post(f"{API}/jobs/generate", json={
-                "document_id": selected_doc, "types": types, "items_per_chunk": items_per
-            })
-            if r.ok:
-                job_id = r.json()["job_id"]
-                st.info(f"Job {job_id} started")
-                # poll
-                import time
-                progress = st.progress(0.0)
-                for _ in range(60):
-                    time.sleep(1)
-                    s = requests.get(f"{API}/jobs/{job_id}").json()
-                    progress.progress(s.get("progress", 0.0))
-                    if s["status"] in ("done", "failed", "cancelled"):
-                        break
-                st.success(f"Job {s['status']}: {s.get('result_ids')}")
+            if not types:
+                st.warning("Please select at least one content type to generate.")
             else:
-                st.error(r.text)
+                r = requests.post(f"{API}/jobs/generate", json={
+                    "document_id": selected_doc, "types": types, "items_per_chunk": items_per
+                })
+                if r.ok:
+                    job_id = r.json()["job_id"]
+                    st.info(f"Job {job_id} started")
+                    # poll
+                    import time
+                    progress = st.progress(0.0)
+                    for _ in range(60):
+                        time.sleep(1)
+                        s = requests.get(f"{API}/jobs/{job_id}").json()
+                        progress.progress(s.get("progress", 0.0))
+                        if s["status"] in ("done", "failed", "cancelled"):
+                            break
+                    st.success(f"Job {s['status']}: {s.get('result_ids')}")
+                else:
+                    st.error(r.text)
 
 # --- Review Queue tab ---
 with tab_review:
@@ -233,6 +236,63 @@ with tab_qc:
     if st.button("Run Full QC Pipeline"):
         r = requests.post(f"{API}/qc/run", json={"document_id": qdoc, "max_retries": 1})
         st.json(r.json())
+
+
+# --- Study Mode tab ---
+with tab_student:
+    st.subheader("Student Study Mode")
+    sdoc = st.number_input("Document ID", min_value=1, value=1, key="sdoc")
+    if st.button("Load flashcards"):
+        r = requests.get(f"{API}/items", params={"document_id": sdoc, "item_type": "flashcard"})
+        st.session_state["study_cards"] = r.json() if r.ok else []
+        st.session_state["card_idx"] = 0
+        st.session_state["show_back"] = False
+    cards = st.session_state.get("study_cards", [])
+    if cards:
+        idx = st.session_state.get("card_idx", 0)
+        idx = idx % len(cards)
+        card = cards[idx]
+        p = card["payload"]
+        st.markdown(f"### Card {idx+1} of {len(cards)}")
+        st.markdown(f"**Front:** {p.get('front','')}")
+        if st.session_state.get("show_back"):
+            st.markdown(f"**Back:** {p.get('back','')}")
+        c1, c2, c3 = st.columns(3)
+        if c1.button("Show/Hide Answer"):
+            st.session_state["show_back"] = not st.session_state.get("show_back", False)
+        if c2.button("Next"):
+            st.session_state["card_idx"] = (idx + 1) % len(cards)
+            st.session_state["show_back"] = False
+        if c3.button("Prev"):
+            st.session_state["card_idx"] = (idx - 1) % len(cards)
+            st.session_state["show_back"] = False
+    else:
+        st.info("Load flashcards to begin.")
+    st.divider()
+    st.subheader("Practice Quiz (MCQs)")
+    if st.button("Load quiz"):
+        r = requests.get(f"{API}/items", params={"document_id": sdoc, "item_type": "mcq"})
+        st.session_state["quiz_items"] = r.json() if r.ok else []
+        st.session_state["quiz_idx"] = 0
+        st.session_state["quiz_score"] = 0
+    qitems = st.session_state.get("quiz_items", [])
+    if qitems:
+        qi = st.session_state.get("quiz_idx", 0)
+        if qi < len(qitems):
+            q = qitems[qi]
+            p = q["payload"]
+            st.markdown(f"**Q{qi+1}.** {p.get('stem','')}")
+            choice = st.radio("Choose", [o.get("text","") for o in p.get("options",[])], key=f"q_{q['id']}")
+            if st.button("Submit answer", key=f"subq_{q['id']}"):
+                correct = next((o.get("text") for o in p.get("options",[]) if o.get("is_correct")), None)
+                if choice == correct:
+                    st.success("Correct!")
+                    st.session_state["quiz_score"] = st.session_state.get("quiz_score",0)+1
+                else:
+                    st.error(f"Incorrect. Correct: {correct}")
+                st.session_state["quiz_idx"] = qi + 1
+        else:
+            st.success(f"Quiz complete! Score: {st.session_state.get('quiz_score',0)}/{len(qitems)}")
 
 
 # --- Rating Study tab ---

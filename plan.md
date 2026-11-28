@@ -498,7 +498,49 @@ Design:
 
 ---
 
-## 12. Open Questions for Stakeholders
+## 13. Professional Platform Enhancements (Phase 6+)
+
+### Product & UX
+- Role-based dashboards (teacher, student, admin) with SSO (OAuth/SAML)
+- Student-facing study mode (flashcard review, practice quizzes, progress tracking)
+- Adaptive difficulty and personalized learning paths
+- Rich text/LaTeX rendering, image/diagram support
+- Dark mode, responsive layout, mobile-friendly
+
+### Content Quality
+- OCR for scanned PDFs (Tesseract) and better table/figure extraction
+- Multilingual generation
+- Stronger factual grounding (NLI model, not just LLM judge)
+- Bloom distribution control per assessment with auto-balancing
+- Plagiarism/originality checks on generated items
+
+### Platform & Scale
+- PostgreSQL + pgvector for production
+- Async task queue (Celery/RQ) instead of in-process background tasks
+- Redis caching for LLM responses and embeddings
+- Horizontal scaling, Kubernetes
+- CDN for static assets and file storage (S3)
+
+### Analytics & Insights
+- Learning analytics dashboard (item difficulty, discrimination, usage)
+- Teacher insights: class performance, weak topics, item bank analytics
+- LMS export with grade passback
+
+### Security & Compliance
+- Enforce auth by default, per-user rate limiting, audit logs
+- Data privacy (FERPA/GDPR), encryption at rest
+- Input validation and dependency scanning in CI
+
+### Quality & DevOps
+- Comprehensive test suite (unit, integration, E2E)
+- CI/CD with staging/production
+- Monitoring/alerting (Sentry, Prometheus, Grafana)
+- Feature flags for gradual rollout
+
+### Evaluation
+- Larger blind study with external SMEs
+- Automated metrics (BLEU/ROUGE, option quality classifiers)
+- A/B testing of prompt versions
 
 1. Target LMS integration (Canvas/Moodle/Blackboard) → affects QTI version.
 2. Preferred LLM provider / on-prem requirement (data privacy for student content).
