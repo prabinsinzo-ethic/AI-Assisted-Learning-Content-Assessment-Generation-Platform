@@ -40,7 +40,7 @@ goto :end
 :dashboard
 cd /d "%BACKEND%\..\frontend"
 echo Starting Streamlit dashboard on http://127.0.0.1:8501 ...
-start "AI Dashboard" cmd /k "python -m streamlit run app.py --server.port 8501"
+start "AI Dashboard" cmd /k "cd /d frontend && python -m streamlit run app.py --server.port 8501"
 goto :end
 :end
 endlocal

@@ -38,6 +38,7 @@ case "${1:-start}" in
     ;;
   dashboard)
     cd "$ROOT/frontend"
+    cd "$ROOT/frontend"
     nohup python -m streamlit run app.py --server.port 8501 > "$ROOT/dashboard.log" 2>&1 &
     echo "Dashboard started on http://127.0.0.1:8501"
     ;;
