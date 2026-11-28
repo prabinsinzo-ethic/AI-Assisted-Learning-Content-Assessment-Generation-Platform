@@ -21,6 +21,15 @@ def init_db():
     # lightweight migration for new columns
     from sqlalchemy import inspect, text
     insp = inspect(engine)
+    # documents table migration
+    if "documents" in insp.get_table_names():
+        dcols = {c["name"] for c in insp.get_columns("documents")}
+        dalts = []
+        if "user_id" not in dcols:
+            dalts.append("ALTER TABLE documents ADD COLUMN user_id INTEGER")
+        with engine.begin() as conn:
+            for a in dalts:
+                conn.execute(text(a))
     if "content_items" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("content_items")}
         alters = []

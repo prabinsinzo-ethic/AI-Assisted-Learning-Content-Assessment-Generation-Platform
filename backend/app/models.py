@@ -31,6 +31,7 @@ class Document(Base):
     filename = Column(String(255))
     doc_type = Column(String(50), default="text")
     status = Column(String(50), default="uploaded")
+    user_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     chunks = relationship("Chunk", back_populates="document", cascade="all, delete-orphan")
     items = relationship("ContentItem", back_populates="document", cascade="all, delete-orphan")
@@ -133,6 +134,28 @@ class StudyRater(Base):
     study_id = Column(Integer, ForeignKey("studies.id"), nullable=False)
     rater_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     enrolled_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    role = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    item_id = Column(Integer, ForeignKey("content_items.id"), nullable=False)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    student_answer = Column(Text)
+    score = Column(Float)
+    feedback = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Rating(Base):

@@ -15,11 +15,13 @@ from ..schemas import DocumentOut, ChunkOut
 class UrlIngest(BaseModel):
     url: str
     title: Optional[str] = None
+    user_id: Optional[int] = None
 
 
 class YouTubeIngest(BaseModel):
     url: str
     title: Optional[str] = None
+    user_id: Optional[int] = None
     url: str
     title: Optional[str] = None
 
@@ -34,7 +36,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 @router.post("", response_model=DocumentOut)
-async def upload_document(title: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_document(title: str = Form(...), file: UploadFile = File(...), user_id: Optional[int] = Form(None), db: Session = Depends(get_db)):
     from ..config import MAX_UPLOAD_MB
     if file.size and file.size > MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(413, "File too large")
@@ -44,7 +46,7 @@ async def upload_document(title: str = Form(...), file: UploadFile = File(...), 
     dest = UPLOAD_DIR / file.filename
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
-    doc = Document(title=title, filename=file.filename, doc_type="text", status="uploaded")
+    doc = Document(title=title, filename=file.filename, doc_type="text", status="uploaded", user_id=user_id)
     db.add(doc)
     db.commit()
     db.refresh(doc)
@@ -102,8 +104,8 @@ def get_chunks(doc_id: int, db: Session = Depends(get_db)):
                     page_start=c.page_start, page_end=c.page_end, text=c.text, token_count=c.token_count) for c in chunks]
 
 
-def _create_from_text(db, title, text, doc_type, source_url=None):
-    doc = Document(title=title, filename=source_url, doc_type=doc_type, status="uploaded")
+def _create_from_text(db, title, text, doc_type, source_url=None, user_id=None):
+    doc = Document(title=title, filename=source_url, doc_type=doc_type, status="uploaded", user_id=user_id)
     db.add(doc)
     db.commit()
     db.refresh(doc)
@@ -136,7 +138,7 @@ def ingest_url(payload: UrlIngest, db: Session = Depends(get_db)):
     title, text = fetch_url_text(payload.url)
     if payload.title:
         title = payload.title
-    doc = _create_from_text(db, title, text, "url", payload.url)
+    doc = _create_from_text(db, title, text, "url", payload.url, payload.user_id)
     return _doc_out(doc)
 
 
@@ -145,7 +147,7 @@ def ingest_youtube(payload: YouTubeIngest, db: Session = Depends(get_db)):
     title, text = fetch_youtube_transcript(payload.url)
     if payload.title:
         title = payload.title
-    doc = _create_from_text(db, title, text, "youtube", payload.url)
+    doc = _create_from_text(db, title, text, "youtube", payload.url, payload.user_id)
     return _doc_out(doc)
 
 
