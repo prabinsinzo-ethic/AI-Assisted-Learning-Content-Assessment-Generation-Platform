@@ -45,7 +45,7 @@ st.caption("Upload, generate, study, and track your learning progress.")
 
 page = st.sidebar.radio("Navigate", [
     "🏠 Dashboard", "📄 Upload & Study", "✅ Review Queue", "📚 Items",
-    "🧪 Rating Study", "📖 Study Mode", "⚙️ Settings"
+    "🧪 Rating Study", "📖 Study Mode", "📊 Analytics", "⚙️ Settings"
 ])
 
 # ---------- Dashboard ----------
@@ -390,15 +390,29 @@ elif page == "📖 Study Mode":
         st.markdown(f"**Front:** {p.get('front','')}")
         if st.session_state.get("show_back"):
             st.markdown(f"**Back:** {p.get('back','')}")
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4, c5 = st.columns(5)
         if c1.button("Show/Hide"):
             st.session_state["show_back"] = not st.session_state.get("show_back", False)
-        if c2.button("Next"):
+        if c2.button("Again (1)"):
+            requests.post(f"{API}/study/review", json={"user_id": 1, "item_id": card["id"], "quality": 1})
             st.session_state["card_idx"] = (idx + 1) % len(cards)
             st.session_state["show_back"] = False
-        if c3.button("Prev"):
-            st.session_state["card_idx"] = (idx - 1) % len(cards)
+            st.rerun()
+        if c3.button("Hard (2)"):
+            requests.post(f"{API}/study/review", json={"user_id": 1, "item_id": card["id"], "quality": 2})
+            st.session_state["card_idx"] = (idx + 1) % len(cards)
             st.session_state["show_back"] = False
+            st.rerun()
+        if c4.button("Good (3)"):
+            requests.post(f"{API}/study/review", json={"user_id": 1, "item_id": card["id"], "quality": 3})
+            st.session_state["card_idx"] = (idx + 1) % len(cards)
+            st.session_state["show_back"] = False
+            st.rerun()
+        if c5.button("Easy (4)"):
+            requests.post(f"{API}/study/review", json={"user_id": 1, "item_id": card["id"], "quality": 4})
+            st.session_state["card_idx"] = (idx + 1) % len(cards)
+            st.session_state["show_back"] = False
+            st.rerun()
     else:
         empty_state("No flashcards", "Load a document with flashcards.")
     st.divider()
@@ -428,6 +442,48 @@ elif page == "📖 Study Mode":
             st.success(f"Quiz complete! Score: {st.session_state.get('quiz_score',0)}/{len(qitems)}")
     else:
         empty_state("No MCQs", "Load a document with MCQs.")
+
+# ---------- Analytics ----------
+elif page == "📊 Analytics":
+    st.header("Student Analytics Dashboard")
+    user_id = st.number_input("User ID", min_value=1, value=1, key="analytics_user")
+    r = requests.get(f"{API}/analytics/dashboard", params={"user_id": user_id})
+    if r.ok:
+        d = r.json()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Streak (days)", d.get("streak_days", 0))
+        c2.metric("Reviewed", d.get("total_reviewed", 0))
+        c3.metric("Mastered", d.get("mastered", 0))
+        c4.metric("Mastery %", f"{d.get('mastery_percent', 0)}%")
+        st.subheader("Weak Areas")
+        weak = d.get("weak_item_ids", [])
+        if weak:
+            for wid in weak:
+                st.write(f"- Item {wid}")
+        else:
+            st.success("No weak areas detected.")
+        st.subheader("Quiz Performance")
+        st.write(f"Attempts: {d.get('quiz_attempts', 0)}")
+        if d.get("quiz_avg_score") is not None:
+            st.write(f"Avg score: {d['quiz_avg_score']:.2f}")
+    else:
+        st.error(r.text)
+    st.divider()
+    st.subheader("Folders & Decks")
+    r = requests.get(f"{API}/folders", params={"user_id": user_id})
+    if r.ok:
+        folders = r.json()
+        st.write("Folders:", [f["name"] for f in folders])
+    if st.button("Create folder"):
+        name = st.text_input("Folder name", key="new_folder")
+        if name:
+            rr = requests.post(f"{API}/folders", json={"user_id": user_id, "name": name})
+            if rr.ok:
+                st.success("Created")
+    r = requests.get(f"{API}/folders/decks", params={"user_id": user_id})
+    if r.ok:
+        decks = r.json()
+        st.write("Decks:", [d["name"] for d in decks])
 
 # ---------- Settings ----------
 elif page == "⚙️ Settings":
