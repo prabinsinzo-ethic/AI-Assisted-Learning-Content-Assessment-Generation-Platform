@@ -153,3 +153,15 @@ class Rating(Base):
     comments = Column(Text)
     started_at = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class StudyProgress(Base):
+    __tablename__ = "study_progress"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    item_id = Column(Integer, ForeignKey("content_items.id"), nullable=False)
+    ease_factor = Column(Float, default=2.5)
+    interval_days = Column(Integer, default=0)
+    repetitions = Column(Integer, default=0)
+    next_review = Column(DateTime, default=datetime.utcnow)
+    last_reviewed = Column(DateTime)

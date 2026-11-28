@@ -537,10 +537,53 @@ Design:
 - Monitoring/alerting (Sentry, Prometheus, Grafana)
 - Feature flags for gradual rollout
 
-### Evaluation
-- Larger blind study with external SMEs
-- Automated metrics (BLEU/ROUGE, option quality classifiers)
-- A/B testing of prompt versions
+## 14. Full E-Learning Platform Gaps (Phase 7+)
+
+### Student Experience
+- Student accounts, dashboards, progress tracking, badges/certificates
+- Spaced-repetition flashcard review (SM-2) and practice quizzes
+- Discussion/Q&A forums, peer interaction
+- Notifications and reminders
+
+### Content & Delivery
+- Video/audio lessons, interactive simulations
+- SCORM/xAPI content packages
+- Offline access / mobile apps
+- Search across courses and materials
+- Content versioning and publishing workflow
+
+### Assessment & Grading
+- Auto-grading for short answers (NLP)
+- Rubric-based manual grading with feedback
+- Question banks with tagging and reuse
+- Randomized exams, time limits, proctoring
+- Gradebook with weighted categories and export
+
+### Analytics & Reporting
+- Learning analytics (engagement, mastery, at-risk students)
+- Item analytics (difficulty, discrimination, distractor effectiveness)
+- Teacher/admin reports, export to BI tools
+
+### Integrations
+- LMS integration (Canvas/Moodle) with grade passback
+- Calendar, email, notification integrations
+- SSO (OAuth/SAML) and roster sync
+
+### Platform & Ops
+- PostgreSQL + pgvector, Redis caching
+- Async workers, horizontal scaling, CDN
+- Observability (metrics, tracing, alerting)
+- Backups, disaster recovery, data retention
+
+### Accessibility & Compliance
+- WCAG 2.1 AA across all UI
+- FERPA/GDPR compliance, data export/deletion
+- Multi-language and RTL support
+
+### Quality & Delivery
+- Automated tests (unit/integration/E2E)
+- CI/CD with staging/production
+- Feature flags and A/B testing
 
 1. Target LMS integration (Canvas/Moodle/Blackboard) → affects QTI version.
 2. Preferred LLM provider / on-prem requirement (data privacy for student content).
