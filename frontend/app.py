@@ -4,6 +4,43 @@ import streamlit as st
 
 API = os.getenv("API_URL", "http://127.0.0.1:8001")
 
+def render_item(it):
+    p = it.get("payload", {})
+    t = it.get("item_type")
+    if t == "summary":
+        st.markdown(f"**Summary:** {p.get('summary','')}")
+        kp = p.get("key_points", [])
+        if kp:
+            st.markdown("**Key points:**")
+            for k in kp:
+                st.markdown(f"- {k}")
+    elif t == "flashcard":
+        st.markdown(f"**Front:** {p.get('front','')}")
+        st.markdown(f"**Back:** {p.get('back','')}")
+        if p.get("tags"):
+            st.markdown(f"*Tags:* {', '.join(p['tags'])}")
+    elif t == "mcq":
+        st.markdown(f"**Question:** {p.get('stem','')}")
+        for i, o in enumerate(p.get("options", [])):
+            mark = "✅" if o.get("is_correct") else "•"
+            st.markdown(f"{mark} {chr(65+i)}. {o.get('text','')}")
+        if p.get("explanation"):
+            st.markdown(f"*Explanation:* {p.get('explanation')}")
+    elif t == "short_answer":
+        st.markdown(f"**Question:** {p.get('question','')}")
+        st.markdown(f"**Model answer:** {p.get('model_answer','')}")
+        if p.get("rubric"):
+            st.markdown("**Rubric:**")
+            for r in p["rubric"]:
+                st.markdown(f"- {r.get('criterion')} ({r.get('points')} pts)")
+        st.markdown(f"*Max points:* {p.get('max_points')}")
+    elif t == "answer_key":
+        st.markdown(f"**Item #{p.get('item_id')} — Answer:** {p.get('answer','')}")
+        if p.get("grading_notes"):
+            st.markdown(f"*Grading notes:* {p.get('grading_notes')}")
+    else:
+        st.json(p)
+
 st.set_page_config(page_title="AI Learning Content Platform", layout="wide")
 st.title("AI Learning Content & Assessment Platform")
 
@@ -98,7 +135,7 @@ with tab_review:
         col1, col2 = st.columns([4, 1])
         with col1:
             st.markdown(f"**Item {it['id']}** — {it['item_type']} | Bloom: {it.get('bloom_level')} | Q: {it.get('quality_score')}")
-            st.json(it["payload"])
+            render_item(it)
         with col2:
             if st.checkbox("Select", key=f"sel_{it['id']}"):
                 selected_ids.append(it["id"])
@@ -119,7 +156,6 @@ with tab_review:
             requests.patch(f"{API}/items/{iid}", json={"status": "rejected"})
         st.success(f"Rejected {len(selected_ids)}")
 
-# --- Items tab ---
 with tab_items:
     st.subheader("Items")
     did = st.number_input("Document ID", min_value=1, value=1)
@@ -135,7 +171,7 @@ with tab_items:
     st.write(f"Total: {len(items)}")
     for it in items:
         with st.expander(f"Item {it['id']} - {it['item_type']} ({it['status']})"):
-            st.json(it["payload"])
+            render_item(it)
             st.write(f"Bloom: {it.get('bloom_level')} | Quality: {it.get('quality_score')} | Model: {it.get('model')}")
             # Edit
             with st.expander(f"Edit item {it['id']}"):
