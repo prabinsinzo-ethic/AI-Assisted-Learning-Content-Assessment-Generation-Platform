@@ -1,103 +1,116 @@
 import os
 import requests
+import time
+import json as _json
 import streamlit as st
+from common import sidebar, render_item, empty_state
 
-API = os.getenv("API_URL", "http://127.0.0.1:8001")
+st.set_page_config(page_title="AI Learning Content Platform", layout="wide", page_icon="📚")
+API = __import__("common").API
 
-def render_item(it):
-    p = it.get("payload", {})
-    t = it.get("item_type")
-    if t == "summary":
-        st.markdown(f"**Summary:** {p.get('summary','')}")
-        kp = p.get("key_points", [])
-        if kp:
-            st.markdown("**Key points:**")
-            for k in kp:
-                st.markdown(f"- {k}")
-    elif t == "flashcard":
-        st.markdown(f"**Front:** {p.get('front','')}")
-        st.markdown(f"**Back:** {p.get('back','')}")
-        if p.get("tags"):
-            st.markdown(f"*Tags:* {', '.join(p['tags'])}")
-    elif t == "mcq":
-        st.markdown(f"**Question:** {p.get('stem','')}")
-        for i, o in enumerate(p.get("options", [])):
-            mark = "✅" if o.get("is_correct") else "•"
-            st.markdown(f"{mark} {chr(65+i)}. {o.get('text','')}")
-        if p.get("explanation"):
-            st.markdown(f"*Explanation:* {p.get('explanation')}")
-    elif t == "short_answer":
-        st.markdown(f"**Question:** {p.get('question','')}")
-        st.markdown(f"**Model answer:** {p.get('model_answer','')}")
-        if p.get("rubric"):
-            st.markdown("**Rubric:**")
-            for r in p["rubric"]:
-                st.markdown(f"- {r.get('criterion')} ({r.get('points')} pts)")
-        st.markdown(f"*Max points:* {p.get('max_points')}")
-    elif t == "answer_key":
-        st.markdown(f"**Item #{p.get('item_id')} — Answer:** {p.get('answer','')}")
-        if p.get("grading_notes"):
-            st.markdown(f"*Grading notes:* {p.get('grading_notes')}")
-    else:
-        st.json(p)
+# Custom CSS
+st.markdown("""
+<style>
+    .main .block-container { padding-top: 1.2rem; padding-bottom: 2rem; max-width: 1200px; }
+    h1, h2, h3 { color: #1f3864; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
+    .stTabs [data-baseweb="tab"] { border-radius: 8px 8px 0 0; padding: 8px 16px; }
+    .item-card { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 12px;
+                 padding: 16px; margin-bottom: 12px; }
+</style>
+""", unsafe_allow_html=True)
 
-st.set_page_config(page_title="AI Learning Content Platform", layout="wide")
-st.title("AI Learning Content & Assessment Platform")
+sidebar()
 
-# Sidebar: API health
-with st.sidebar:
-    st.header("Connection")
+st.title("📚 AI Learning Content & Assessment Platform")
+st.caption("Generate, review, and export AI-assisted study materials from your course documents.")
+
+page = st.sidebar.radio("Navigate", [
+    "🏠 Dashboard", "📄 Documents", "✅ Review Queue", "📚 Items",
+    "🧪 Rating Study", "📖 Study Mode", "⚙️ Settings"
+])
+
+# ---------- Dashboard ----------
+if page == "🏠 Dashboard":
+    st.header("Dashboard")
     try:
-        r = requests.get(f"{API}/health", timeout=3)
-        st.success(f"API OK: {r.json()}")
-    except Exception as e:
-        st.error(f"API unreachable: {e}")
-    api_url = st.text_input("API URL", value=API)
-    if api_url != API:
-        os.environ["API_URL"] = api_url
-        API = api_url
+        docs = requests.get(f"{API}/documents").json()
+        items = requests.get(f"{API}/items").json()
+    except Exception:
+        docs, items = [], []
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Documents", len(docs))
+    c2.metric("Total Items", len(items))
+    c3.metric("Approved", sum(1 for i in items if i.get("status") == "approved"))
+    c4.metric("Pending", sum(1 for i in items if i.get("status") == "draft"))
+    st.divider()
+    st.subheader("Quick Start")
+    st.markdown("""
+    - **Documents**: upload files and generate content
+    - **Review Queue**: approve/reject items
+    - **Items**: browse, edit, view versions
+    - **Quality Control**: run QC checks
+    - **Rating Study**: blind evaluation
+    - **Study Mode**: flashcards and quizzes
+    """)
+    if not docs:
+        empty_state("No documents yet", "Upload your first textbook or notes to get started.")
 
-tab_docs, tab_review, tab_items, tab_qc, tab_study, tab_student = st.tabs(["Documents", "Review Queue", "Items", "Quality Control", "Rating Study", "Study Mode"])
-
-# --- Documents tab ---
-with tab_docs:
-    st.subheader("Upload Document")
+# ---------- Documents ----------
+elif page == "📄 Documents":
+    st.header("Documents")
     title = st.text_input("Title")
     uploaded = st.file_uploader("File", type=["txt", "pdf", "docx"])
     if st.button("Upload") and uploaded and title:
         files = {"file": (uploaded.name, uploaded.getvalue(), "application/octet-stream")}
         r = requests.post(f"{API}/documents", data={"title": title}, files=files)
         if r.ok:
-            st.success(f"Uploaded: {r.json()}")
+            st.success(f"Uploaded document #{r.json()['id']}")
+            st.rerun()
         else:
             st.error(r.text)
-
-    st.subheader("Documents")
+    st.subheader("Or ingest from URL / YouTube")
+    url_title = st.text_input("Title (optional)", key="url_title")
+    url_val = st.text_input("URL", key="url_val")
+    c1, c2 = st.columns(2)
+    if c1.button("Ingest URL"):
+        r = requests.post(f"{API}/documents/url", json={"url": url_val, "title": url_title or None})
+        if r.ok:
+            st.success(f"Ingested document #{r.json()['id']}")
+            st.rerun()
+        else:
+            st.error(r.text)
+    if c2.button("Ingest YouTube"):
+        r = requests.post(f"{API}/documents/youtube", json={"url": url_val, "title": url_title or None})
+        if r.ok:
+            st.success(f"Ingested document #{r.json()['id']}")
+            st.rerun()
+        else:
+            st.error(r.text)
+    st.divider()
     try:
         docs = requests.get(f"{API}/documents").json()
     except Exception as e:
         docs = []
         st.error(e)
-    doc_map = {f"{d['id']}: {d['title']}": d["id"] for d in docs}
-    selected_doc_label = st.selectbox("Select document", list(doc_map.keys())) if doc_map else None
-    selected_doc = doc_map[selected_doc_label] if selected_doc_label else None
-
-    if selected_doc:
-        st.write(f"Document ID: {selected_doc}")
-        # chunks
+    if not docs:
+        empty_state("No documents", "Upload a file to begin.")
+    else:
+        doc_map = {f"{d['id']}: {d['title']}": d["id"] for d in docs}
+        selected_doc_label = st.selectbox("Select document", list(doc_map.keys()))
+        selected_doc = doc_map[selected_doc_label]
+        st.write(f"Document ID: **{selected_doc}**")
         try:
             chunks = requests.get(f"{API}/documents/{selected_doc}/chunks").json()
-            st.write(f"Chunks: {len(chunks)}")
+            st.info(f"{len(chunks)} chunks extracted")
         except Exception:
             chunks = []
-        # generation
-        st.subheader("Generate")
-        types = st.multiselect("Types", ["summary", "flashcard", "mcq", "short_answer", "answer_key"],
-                               default=[])
+        st.subheader("Generate Content")
+        types = st.multiselect("Content types", ["summary", "flashcard", "mcq", "short_answer", "answer_key"])
         items_per = st.number_input("Items per chunk", min_value=1, max_value=5, value=1)
         if st.button("Generate"):
             if not types:
-                st.warning("Please select at least one content type to generate.")
+                st.warning("Select at least one content type.")
             else:
                 r = requests.post(f"{API}/jobs/generate", json={
                     "document_id": selected_doc, "types": types, "items_per_chunk": items_per
@@ -105,8 +118,6 @@ with tab_docs:
                 if r.ok:
                     job_id = r.json()["job_id"]
                     st.info(f"Job {job_id} started")
-                    # poll
-                    import time
                     progress = st.progress(0.0)
                     for _ in range(60):
                         time.sleep(1)
@@ -114,13 +125,16 @@ with tab_docs:
                         progress.progress(s.get("progress", 0.0))
                         if s["status"] in ("done", "failed", "cancelled"):
                             break
-                    st.success(f"Job {s['status']}: {s.get('result_ids')}")
+                    if s["status"] == "done":
+                        st.success(f"Done! Created {len(s.get('result_ids', []))} items.")
+                    else:
+                        st.error(s.get("message", "Failed"))
                 else:
                     st.error(r.text)
 
-# --- Review Queue tab ---
-with tab_review:
-    st.subheader("Pending Review Queue")
+# ---------- Review Queue ----------
+elif page == "✅ Review Queue":
+    st.header("Review Queue")
     rq_doc = st.number_input("Document ID", min_value=1, value=1, key="rqdoc")
     rq_type = st.selectbox("Type filter", ["", "summary", "flashcard", "mcq", "short_answer", "answer_key"], key="rqtype")
     params = {"document_id": rq_doc, "status": "draft"}
@@ -131,66 +145,70 @@ with tab_review:
     except Exception as e:
         pending = []
         st.error(e)
-    st.write(f"Pending: {len(pending)}")
-    # bulk selection
+    st.write(f"**{len(pending)}** items pending review")
+    if not pending:
+        empty_state("No pending items", "Generate content or change filters.")
     selected_ids = []
     for it in pending:
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.markdown(f"**Item {it['id']}** — {it['item_type']} | Bloom: {it.get('bloom_level')} | Q: {it.get('quality_score')}")
+        with st.container():
+            st.markdown(f"**Item {it['id']}** — {it['item_type']}")
             render_item(it)
-        with col2:
-            if st.checkbox("Select", key=f"sel_{it['id']}"):
-                selected_ids.append(it["id"])
-            if st.button("Approve", key=f"appr_{it['id']}"):
+            c1, c2, c3 = st.columns([1, 1, 4])
+            if c1.button("✅ Approve", key=f"appr_{it['id']}"):
                 requests.patch(f"{API}/items/{it['id']}", json={"status": "approved"})
-                st.success("Approved")
-            if st.button("Reject", key=f"rej_{it['id']}"):
+                st.rerun()
+            if c2.button("❌ Reject", key=f"rej_{it['id']}"):
                 requests.patch(f"{API}/items/{it['id']}", json={"status": "rejected"})
-                st.success("Rejected")
-    st.divider()
-    c1, c2 = st.columns(2)
-    if c1.button("Bulk Approve Selected"):
-        for iid in selected_ids:
-            requests.patch(f"{API}/items/{iid}", json={"status": "approved"})
-        st.success(f"Approved {len(selected_ids)}")
-    if c2.button("Bulk Reject Selected"):
-        for iid in selected_ids:
-            requests.patch(f"{API}/items/{iid}", json={"status": "rejected"})
-        st.success(f"Rejected {len(selected_ids)}")
+                st.rerun()
+            if c3.checkbox("Select", key=f"sel_{it['id']}"):
+                selected_ids.append(it["id"])
+    if selected_ids:
+        st.divider()
+        c1, c2 = st.columns(2)
+        if c1.button(f"Approve {len(selected_ids)} selected"):
+            for iid in selected_ids:
+                requests.patch(f"{API}/items/{iid}", json={"status": "approved"})
+            st.rerun()
+        if c2.button(f"Reject {len(selected_ids)} selected"):
+            for iid in selected_ids:
+                requests.patch(f"{API}/items/{iid}", json={"status": "rejected"})
+            st.rerun()
 
-with tab_items:
-    st.subheader("Items")
+# ---------- Items ----------
+elif page == "📚 Items":
+    st.header("All Items")
     did = st.number_input("Document ID", min_value=1, value=1)
     itype = st.selectbox("Type", ["", "summary", "flashcard", "mcq", "short_answer", "answer_key"])
+    status_f = st.selectbox("Status", ["", "draft", "approved", "rejected"])
     params = {"document_id": did}
     if itype:
         params["item_type"] = itype
+    if status_f:
+        params["status"] = status_f
     try:
         items = requests.get(f"{API}/items", params=params).json()
     except Exception as e:
         items = []
         st.error(e)
-    st.write(f"Total: {len(items)}")
+    st.write(f"**{len(items)}** items")
+    if not items:
+        empty_state("No items found", "Adjust filters or generate content.")
     for it in items:
-        with st.expander(f"Item {it['id']} - {it['item_type']} ({it['status']})"):
+        with st.expander(f"Item {it['id']} — {it['item_type']} ({it['status']})"):
             render_item(it)
-            st.write(f"Bloom: {it.get('bloom_level')} | Quality: {it.get('quality_score')} | Model: {it.get('model')}")
-            # Edit
-            with st.expander(f"Edit item {it['id']}"):
-                import json as _json
+            st.caption(f"Bloom: {it.get('bloom_level')} | Quality: {it.get('quality_score')} | Model: {it.get('model')}")
+            with st.expander("Edit payload"):
                 txt = st.text_area("Payload JSON", value=_json.dumps(it["payload"], indent=2), key=f"edit_{it['id']}")
-                if st.button("Save edit (new version)", key=f"save_{it['id']}"):
+                if st.button("Save (new version)", key=f"save_{it['id']}"):
                     try:
                         new_payload = _json.loads(txt)
                         r = requests.patch(f"{API}/items/{it['id']}", json={"payload": new_payload})
                         if r.ok:
-                            st.success(f"New version created: {r.json()}")
+                            st.success(f"New version: {r.json()}")
                         else:
                             st.error(r.text)
                     except Exception as e:
                         st.error(str(e))
-            # Versions
             if st.button("View versions", key=f"ver_{it['id']}"):
                 r = requests.get(f"{API}/items/{it['id']}/versions")
                 if r.ok:
@@ -198,106 +216,10 @@ with tab_items:
                         st.write(f"v{v['version']} (id {v['id']}, by {v['created_by']}, status {v['status']})")
                 else:
                     st.error(r.text)
-            new_status = st.selectbox("Status", ["draft", "approved", "rejected"], index=["draft", "approved", "rejected"].index(it["status"]), key=f"st_{it['id']}")
-            if st.button("Update status", key=f"btn_{it['id']}"):
-                r = requests.patch(f"{API}/items/{it['id']}", json={"status": new_status})
-                if r.ok:
-                    st.success("Updated")
-                else:
-                    st.error(r.text)
 
-# --- QC tab ---
-with tab_qc:
-    st.subheader("Run Quality Control")
-    qdoc = st.number_input("Document ID (QC)", min_value=1, value=1, key="qdoc")
-    col1, col2, col3 = st.columns(3)
-    if col1.button("Verify (grounding)"):
-        r = requests.post(f"{API}/qc/verify", json={"document_id": qdoc})
-        st.json(r.json())
-    if col2.button("Dedup"):
-        r = requests.post(f"{API}/qc/dedup", json={"document_id": qdoc})
-        st.json(r.json())
-    if col3.button("Ambiguity"):
-        r = requests.post(f"{API}/qc/ambiguity", json={"document_id": qdoc})
-        st.json(r.json())
-    col4, col5, col6 = st.columns(3)
-    if col4.button("Bloom"):
-        r = requests.post(f"{API}/qc/bloom", json={"document_id": qdoc})
-        st.json(r.json())
-    if col5.button("Heuristics"):
-        r = requests.post(f"{API}/qc/heuristics", json={"document_id": qdoc})
-        st.json(r.json())
-    if col6.button("Quality Score"):
-        r = requests.post(f"{API}/qc/quality-score", json={"document_id": qdoc})
-        st.json(r.json())
-    if st.button("Consistency"):
-        r = requests.post(f"{API}/qc/consistency", json={"document_id": qdoc})
-        st.json(r.json())
-    if st.button("Run Full QC Pipeline"):
-        r = requests.post(f"{API}/qc/run", json={"document_id": qdoc, "max_retries": 1})
-        st.json(r.json())
-
-
-# --- Study Mode tab ---
-with tab_student:
-    st.subheader("Student Study Mode")
-    sdoc = st.number_input("Document ID", min_value=1, value=1, key="sdoc")
-    if st.button("Load flashcards"):
-        r = requests.get(f"{API}/items", params={"document_id": sdoc, "item_type": "flashcard"})
-        st.session_state["study_cards"] = r.json() if r.ok else []
-        st.session_state["card_idx"] = 0
-        st.session_state["show_back"] = False
-    cards = st.session_state.get("study_cards", [])
-    if cards:
-        idx = st.session_state.get("card_idx", 0)
-        idx = idx % len(cards)
-        card = cards[idx]
-        p = card["payload"]
-        st.markdown(f"### Card {idx+1} of {len(cards)}")
-        st.markdown(f"**Front:** {p.get('front','')}")
-        if st.session_state.get("show_back"):
-            st.markdown(f"**Back:** {p.get('back','')}")
-        c1, c2, c3 = st.columns(3)
-        if c1.button("Show/Hide Answer"):
-            st.session_state["show_back"] = not st.session_state.get("show_back", False)
-        if c2.button("Next"):
-            st.session_state["card_idx"] = (idx + 1) % len(cards)
-            st.session_state["show_back"] = False
-        if c3.button("Prev"):
-            st.session_state["card_idx"] = (idx - 1) % len(cards)
-            st.session_state["show_back"] = False
-    else:
-        st.info("Load flashcards to begin.")
-    st.divider()
-    st.subheader("Practice Quiz (MCQs)")
-    if st.button("Load quiz"):
-        r = requests.get(f"{API}/items", params={"document_id": sdoc, "item_type": "mcq"})
-        st.session_state["quiz_items"] = r.json() if r.ok else []
-        st.session_state["quiz_idx"] = 0
-        st.session_state["quiz_score"] = 0
-    qitems = st.session_state.get("quiz_items", [])
-    if qitems:
-        qi = st.session_state.get("quiz_idx", 0)
-        if qi < len(qitems):
-            q = qitems[qi]
-            p = q["payload"]
-            st.markdown(f"**Q{qi+1}.** {p.get('stem','')}")
-            choice = st.radio("Choose", [o.get("text","") for o in p.get("options",[])], key=f"q_{q['id']}")
-            if st.button("Submit answer", key=f"subq_{q['id']}"):
-                correct = next((o.get("text") for o in p.get("options",[]) if o.get("is_correct")), None)
-                if choice == correct:
-                    st.success("Correct!")
-                    st.session_state["quiz_score"] = st.session_state.get("quiz_score",0)+1
-                else:
-                    st.error(f"Incorrect. Correct: {correct}")
-                st.session_state["quiz_idx"] = qi + 1
-        else:
-            st.success(f"Quiz complete! Score: {st.session_state.get('quiz_score',0)}/{len(qitems)}")
-
-
-# --- Rating Study tab ---
-with tab_study:
-    st.subheader("Blind Rating Study")
+# ---------- Rating Study ----------
+elif page == "🧪 Rating Study":
+    st.header("Blind Rating Study")
     study_id = st.number_input("Study ID", min_value=1, value=1, key="study_id")
     rater_id = st.number_input("Rater ID", min_value=1, value=1, key="rater_id")
     if st.button("Load pairs"):
@@ -313,38 +235,106 @@ with tab_study:
         colA, colB = st.columns(2)
         with colA:
             st.markdown("**Item A**")
-            st.json(pair["A"]["payload"])
+            render_item(pair["A"])
         with colB:
             st.markdown("**Item B**")
-            st.json(pair["B"]["payload"])
+            render_item(pair["B"])
         for label in ["A", "B"]:
             item_id = pair[label]["item_id"]
             with st.expander(f"Rate Item {label} (id {item_id})"):
                 accuracy = st.slider("Accuracy", 1, 5, 3, key=f"acc_{pair['pair_id']}_{label}")
                 clarity = st.slider("Clarity", 1, 5, 3, key=f"clar_{pair['pair_id']}_{label}")
-                difficulty = st.slider("Difficulty appropriateness", 1, 5, 3, key=f"diff_{pair['pair_id']}_{label}")
+                difficulty = st.slider("Difficulty", 1, 5, 3, key=f"diff_{pair['pair_id']}_{label}")
                 distractor = st.slider("Distractor quality", 1, 5, 3, key=f"dist_{pair['pair_id']}_{label}")
                 bloom = st.slider("Bloom alignment", 1, 5, 3, key=f"bloom_{pair['pair_id']}_{label}")
-                overall = st.slider("Overall quality", 1, 5, 3, key=f"ov_{pair['pair_id']}_{label}")
-                would_use = st.slider("Would use (1=no,5=yes)", 1, 5, 3, key=f"use_{pair['pair_id']}_{label}")
+                overall = st.slider("Overall", 1, 5, 3, key=f"ov_{pair['pair_id']}_{label}")
+                would_use = st.slider("Would use", 1, 5, 3, key=f"use_{pair['pair_id']}_{label}")
                 comments = st.text_input("Comments", key=f"com_{pair['pair_id']}_{label}")
-                if st.button("Submit rating", key=f"sub_{pair['pair_id']}_{label}"):
+                if st.button("Submit", key=f"sub_{pair['pair_id']}_{label}"):
                     payload = {
-                        "rater_id": rater_id,
-                        "pair_id": pair["pair_id"],
-                        "blinded_label": label,
-                        "item_id": item_id,
-                        "accuracy": accuracy,
-                        "clarity": clarity,
-                        "difficulty": difficulty,
-                        "distractor_quality": distractor,
-                        "bloom_alignment": bloom,
-                        "overall": overall,
-                        "would_use": would_use,
+                        "rater_id": rater_id, "pair_id": pair["pair_id"], "blinded_label": label,
+                        "item_id": item_id, "accuracy": accuracy, "clarity": clarity,
+                        "difficulty": difficulty, "distractor_quality": distractor,
+                        "bloom_alignment": bloom, "overall": overall, "would_use": would_use,
                         "comments": comments,
                     }
                     r = requests.post(f"{API}/studies/{study_id}/ratings", json=payload)
-                    if r.ok:
-                        st.success("Rating submitted")
-                    else:
-                        st.error(r.text)
+                    (st.success("Submitted") if r.ok else st.error(r.text))
+
+# ---------- Study Mode ----------
+elif page == "📖 Study Mode":
+    st.header("Student Study Mode")
+    sdoc = st.number_input("Document ID", min_value=1, value=1, key="sdoc")
+    if st.button("Load flashcards"):
+        r = requests.get(f"{API}/items", params={"document_id": sdoc, "item_type": "flashcard"})
+        st.session_state["study_cards"] = r.json() if r.ok else []
+        st.session_state["card_idx"] = 0
+        st.session_state["show_back"] = False
+    cards = st.session_state.get("study_cards", [])
+    if cards:
+        idx = st.session_state.get("card_idx", 0) % len(cards)
+        card = cards[idx]
+        p = card["payload"]
+        st.markdown(f"### Card {idx+1} of {len(cards)}")
+        st.markdown(f"**Front:** {p.get('front','')}")
+        if st.session_state.get("show_back"):
+            st.markdown(f"**Back:** {p.get('back','')}")
+        c1, c2, c3 = st.columns(3)
+        if c1.button("Show/Hide"):
+            st.session_state["show_back"] = not st.session_state.get("show_back", False)
+        if c2.button("Next"):
+            st.session_state["card_idx"] = (idx + 1) % len(cards)
+            st.session_state["show_back"] = False
+        if c3.button("Prev"):
+            st.session_state["card_idx"] = (idx - 1) % len(cards)
+            st.session_state["show_back"] = False
+    else:
+        empty_state("No flashcards", "Load a document with flashcards.")
+    st.divider()
+    st.subheader("Practice Quiz (MCQs)")
+    if st.button("Load quiz"):
+        r = requests.get(f"{API}/items", params={"document_id": sdoc, "item_type": "mcq"})
+        st.session_state["quiz_items"] = r.json() if r.ok else []
+        st.session_state["quiz_idx"] = 0
+        st.session_state["quiz_score"] = 0
+    qitems = st.session_state.get("quiz_items", [])
+    if qitems:
+        qi = st.session_state.get("quiz_idx", 0)
+        if qi < len(qitems):
+            q = qitems[qi]
+            p = q["payload"]
+            st.markdown(f"**Q{qi+1}.** {p.get('stem','')}")
+            choice = st.radio("Choose", [o.get("text","") for o in p.get("options",[])], key=f"q_{q['id']}")
+            if st.button("Submit", key=f"subq_{q['id']}"):
+                correct = next((o.get("text") for o in p.get("options",[]) if o.get("is_correct")), None)
+                if choice == correct:
+                    st.success("Correct!")
+                    st.session_state["quiz_score"] = st.session_state.get("quiz_score", 0) + 1
+                else:
+                    st.error(f"Incorrect. Correct: {correct}")
+                st.session_state["quiz_idx"] = qi + 1
+        else:
+            st.success(f"Quiz complete! Score: {st.session_state.get('quiz_score',0)}/{len(qitems)}")
+    else:
+        empty_state("No MCQs", "Load a document with MCQs.")
+
+# ---------- Settings ----------
+elif page == "⚙️ Settings":
+    st.header("Settings")
+    st.write("API URL:", API)
+    try:
+        r = requests.get(f"{API}/stats/costs")
+        if r.ok:
+            d = r.json()
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Documents", d.get("documents", 0))
+            c2.metric("Jobs", d.get("jobs", 0))
+            c3.metric("Tokens used (est.)", d.get("total_tokens_used_estimate", 0))
+            st.subheader("Items by type")
+            for k, v in d.get("items_by_type", {}).items():
+                st.write(f"- {k}: {v}")
+            st.subheader("Models")
+            st.write(f"Generation model: {d.get('models', {}).get('generation')}")
+            st.write(f"Quality model: {d.get('models', {}).get('cheap')}")
+    except Exception as e:
+        st.error(e)

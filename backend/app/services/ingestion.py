@@ -2,11 +2,49 @@ import re
 import uuid
 from pathlib import Path
 from typing import List, Tuple
+import requests
+from bs4 import BeautifulSoup
+from youtube_transcript_api import YouTubeTranscriptApi
 
 from pypdf import PdfReader
 from docx import Document as DocxDocument
 
 from ..config import UPLOAD_DIR
+
+
+def fetch_url_text(url: str) -> Tuple[str, str]:
+    resp = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+    title = soup.title.string.strip() if soup.title and soup.title.string else url
+    for tag in soup(["script", "style", "nav", "footer", "header"]):
+        tag.decompose()
+    text = soup.get_text(separator="\n")
+    text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+    return title, text
+
+
+def fetch_youtube_transcript(url: str) -> Tuple[str, str]:
+    vid = _extract_video_id(url)
+    if not vid:
+        raise ValueError("Invalid YouTube URL")
+    transcript = YouTubeTranscriptApi.get_transcript(vid)
+    text = " ".join(t["text"] for t in transcript)
+    title = f"YouTube: {vid}"
+    return title, text
+
+
+def _extract_video_id(url: str) -> str:
+    patterns = [
+        r"(?:v=|youtu\.be/|embed/|shorts/)([A-Za-z0-9_-]{11})",
+    ]
+    for pat in patterns:
+        m = re.search(pat, url)
+        if m:
+            return m.group(1)
+    if len(url) == 11 and re.match(r"^[A-Za-z0-9_-]{11}$", url):
+        return url
+    return ""
 
 
 def parse_document(path: Path) -> List[Tuple[str, int, int, str]]:

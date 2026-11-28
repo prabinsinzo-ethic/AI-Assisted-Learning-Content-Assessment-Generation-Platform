@@ -9,3 +9,5 @@ python-docx
 uvicorn
 itsdangerous
 streamlit
+youtube-transcript-api
+beautifulsoup4
