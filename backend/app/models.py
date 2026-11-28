@@ -165,3 +165,65 @@ class StudyProgress(Base):
     repetitions = Column(Integer, default=0)
     next_review = Column(DateTime, default=datetime.utcnow)
     last_reviewed = Column(DateTime)
+
+
+class Folder(Base):
+    __tablename__ = "folders"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    parent_id = Column(Integer, ForeignKey("folders.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Deck(Base):
+    __tablename__ = "decks"
+    id = Column(Integer, primary_key=True)
+    folder_id = Column(Integer, ForeignKey("folders.id"))
+    document_id = Column(Integer, ForeignKey("documents.id"))
+    name = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Flashcard(Base):
+    __tablename__ = "flashcards"
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    chunk_ids = Column(Text)
+    front = Column(Text, nullable=False)
+    back = Column(Text, nullable=False)
+    tags = Column(Text)
+    ease_factor = Column(Float, default=2.5)
+    interval_days = Column(Integer, default=0)
+    repetitions = Column(Integer, default=0)
+    next_review = Column(DateTime, default=datetime.utcnow)
+    last_reviewed = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Question(Base):
+    __tablename__ = "questions"
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    chunk_ids = Column(Text)
+    qtype = Column(String(50), nullable=False)
+    stem = Column(Text, nullable=False)
+    options = Column(Text)
+    correct_index = Column(Integer)
+    explanation = Column(Text)
+    model_answer = Column(Text)
+    rubric = Column(Text)
+    max_points = Column(Integer)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Summary(Base):
+    __tablename__ = "summaries"
+    id = Column(Integer, primary_key=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    chunk_ids = Column(Text)
+    summary = Column(Text, nullable=False)
+    key_points = Column(Text)
+    glossary = Column(Text)
+    concept_hierarchy = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)

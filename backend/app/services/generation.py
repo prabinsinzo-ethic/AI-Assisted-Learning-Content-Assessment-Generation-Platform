@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 
 from sqlalchemy.orm import Session
 
-from ..models import Document, Chunk, ContentItem
+from ..models import Document, Chunk, ContentItem, Flashcard, Question, Summary
 from ..services.llm import chat_json, chat_json_with_retry
 from ..schemas import SummaryPayload, FlashcardPayload, MCQPayload, ShortAnswerPayload, AnswerKeyPayload
 from ..prompt_registry import load_template, render
@@ -362,3 +362,135 @@ def generate_summaries(db: Session, document_id: int, items_per_chunk: int = 1) 
             logger.debug("Created summary item %s for chunk %s", item.id, chunk.id)
     logger.info("Created %d summary items for document %s", len(created_ids), document_id)
     return created_ids
+
+
+def generate_flashcard_models(db: Session, document_id: int, count: int = 5) -> List[int]:
+    doc = db.query(Document).get(document_id)
+    if not doc:
+        raise ValueError("Document not found")
+    chunks = sorted(doc.chunks, key=lambda c: c.order_index)
+    created = []
+    i = 0
+    while len(created) < count and chunks:
+        chunk = chunks[i % len(chunks)]
+        tmpl = render(load_template("flashcard"), section=chunk.section or "", chunk_text=chunk.text)
+        try:
+            payload = chat_json_with_retry(tmpl["user"], system=tmpl["system"],
+                                         validate=lambda d: FlashcardPayload(**d), model=LLM_MODEL)
+        except ValueError:
+            payload = {"front": "Key concept", "back": chunk.text[:200], "tags": []}
+        card = Flashcard(
+            document_id=document_id,
+            chunk_ids=json.dumps([chunk.id]),
+            front=payload["front"],
+            back=payload["back"],
+            tags=json.dumps(payload.get("tags", [])),
+        )
+        db.add(card)
+        db.commit()
+        db.refresh(card)
+        created.append(card.id)
+        i += 1
+    logger.info("Created %d flashcard models for document %s", len(created), document_id)
+    return created
+
+
+def generate_question_models(db: Session, document_id: int, qtype: str, count: int = 5) -> List[int]:
+    doc = db.query(Document).get(document_id)
+    if not doc:
+        raise ValueError("Document not found")
+    chunks = sorted(doc.chunks, key=lambda c: c.order_index)
+    created = []
+    i = 0
+    while len(created) < count and chunks:
+        chunk = chunks[i % len(chunks)]
+        if qtype == "mcq":
+            tmpl = render(load_template("mcq"), section=chunk.section or "", chunk_text=chunk.text)
+            try:
+                payload = chat_json_with_retry(tmpl["user"], system=tmpl["system"],
+                                             validate=lambda d: MCQPayload(**d), model=LLM_MODEL)
+            except ValueError:
+                payload = {
+                    "stem": "Which statement is correct?",
+                    "options": [{"text": chunk.text[:80], "is_correct": True},
+                                {"text": "Distractor B", "is_correct": False},
+                                {"text": "Distractor C", "is_correct": False},
+                                {"text": "Distractor D", "is_correct": False}],
+                    "correct_index": 0, "explanation": "From source.", "distractor_rationale": "",
+                }
+            q = Question(
+                document_id=document_id,
+                chunk_ids=json.dumps([chunk.id]),
+                qtype="mcq",
+                stem=payload["stem"],
+                options=json.dumps(payload["options"]),
+                correct_index=payload["correct_index"],
+                explanation=payload.get("explanation", ""),
+            )
+        else:
+            tmpl = render(load_template("short_answer"), section=chunk.section or "", chunk_text=chunk.text)
+            try:
+                payload = chat_json_with_retry(tmpl["user"], system=tmpl["system"],
+                                             validate=lambda d: ShortAnswerPayload(**d), model=LLM_MODEL)
+            except ValueError:
+                payload = {"question": "Explain the main concept.", "model_answer": chunk.text[:200],
+                           "rubric": [{"criterion": "mentions key concept", "points": 1}], "max_points": 2}
+            q = Question(
+                document_id=document_id,
+                chunk_ids=json.dumps([chunk.id]),
+                qtype="short_answer",
+                stem=payload["question"],
+                model_answer=payload["model_answer"],
+                rubric=json.dumps(payload.get("rubric", [])),
+                max_points=payload.get("max_points", 1),
+            )
+        db.add(q)
+        db.commit()
+        db.refresh(q)
+        created.append(q.id)
+        i += 1
+    logger.info("Created %d %s question models for document %s", len(created), qtype, document_id)
+    return created
+
+
+def generate_summary_model(db: Session, document_id: int) -> int:
+    doc = db.query(Document).get(document_id)
+    if not doc:
+        raise ValueError("Document not found")
+    chunks = sorted(doc.chunks, key=lambda c: c.order_index)
+    text = "\n\n".join(c.text for c in chunks)
+    tmpl = render(load_template("summary"), section=doc.title or "Document", chunk_text=text[:4000])
+    try:
+        payload = chat_json_with_retry(tmpl["user"], system=tmpl["system"],
+                                     validate=lambda d: SummaryPayload(**d), model=LLM_MODEL)
+    except ValueError:
+        payload = {"summary": text[:500], "key_points": [], "length_tokens": len(text.split())}
+    # structured fields
+    key_points = payload.get("key_points", [])
+    glossary = []
+    hierarchy = []
+    # derive glossary/hierarchy via LLM (cheap)
+    try:
+        g = chat_json(
+            f"From the text, extract glossary terms and a concept hierarchy. Text:\n{text[:3000]}\n"
+            "Return JSON: {\"glossary\": [{\"term\":\"...\",\"definition\":\"...\"}], \"concept_hierarchy\": [\"...\"]}.",
+            system="You extract glossary and concept hierarchy.",
+            model=LLM_MODEL_CHEAP,
+        )
+        glossary = g.get("glossary", [])
+        hierarchy = g.get("concept_hierarchy", [])
+    except Exception:
+        pass
+    s = Summary(
+        document_id=document_id,
+        chunk_ids=json.dumps([c.id for c in chunks]),
+        summary=payload.get("summary", ""),
+        key_points=json.dumps(key_points),
+        glossary=json.dumps(glossary),
+        concept_hierarchy=json.dumps(hierarchy),
+    )
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    logger.info("Created summary model %s for document %s", s.id, document_id)
+    return s.id

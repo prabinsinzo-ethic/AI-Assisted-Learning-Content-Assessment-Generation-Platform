@@ -114,7 +114,41 @@ class GenerateRequest(BaseModel):
     token_budget: Optional[int] = None
 
 
+class GenerateFlashcardsRequest(BaseModel):
+    document_id: int
+    count: int = 5
+
+
+class GenerateQuestionsRequest(BaseModel):
+    document_id: int
+    qtype: str = "mcq"
+    count: int = 5
+
+
+class GenerateSummaryRequest(BaseModel):
+    document_id: int
+
+
+class GradeRequest(BaseModel):
+    question: str
+    model_answer: str
+    rubric: List[Dict[str, Any]] = []
+    max_points: int = 1
+    student_answer: str
+
+
+class ChatRequest(BaseModel):
+    document_id: int
+    message: str
+    history: List[Dict[str, str]] = []
+
+
 class JobStatus(BaseModel):
+    job_id: str
+    status: str
+    progress: float
+    message: Optional[str] = None
+    result_ids: List[int] = []
     job_id: str
     status: str
     progress: float

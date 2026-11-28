@@ -148,4 +148,10 @@ def _mock_chat(prompt: str, json_mode: bool) -> str:
         })
     if "short" in low and "answer" in low:
         return json.dumps({"question": "Explain X.", "model_answer": "X is ...", "rubric": [{"criterion": "mentions X", "points": 1}], "max_points": 2})
+    if "grade the student's answer" in low:
+        return json.dumps({"score": 2, "max_points": 2, "feedback": "Good answer.", "matched_criteria": ["mentions X"]})
+    if "extract glossary" in low or "concept hierarchy" in low:
+        return json.dumps({"glossary": [{"term": "X", "definition": "Y"}], "concept_hierarchy": ["X -> Y"]})
+    if "you are a tutor" in low:
+        return json.dumps({"answer": "Based on the source, photosynthesis uses light to make glucose.", "sources": []})
     return json.dumps({"result": "mock"})

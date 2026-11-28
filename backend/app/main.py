@@ -10,7 +10,7 @@ init_db()
 
 from .logging_config import setup_logging, get_logger
 from .config import RATE_LIMIT_PER_MIN, MAX_UPLOAD_MB, AUTH_REQUIRED
-from .routers import documents, generation, items, auth, qc, export, studies, analysis, stats, study
+from .routers import documents, generation, items, auth, qc, export, studies, analysis, stats, study, study_suite
 
 setup_logging()
 logger = get_logger("app.main")
@@ -75,6 +75,7 @@ app.include_router(studies.router)
 app.include_router(analysis.router)
 app.include_router(stats.router)
 app.include_router(study.router)
+app.include_router(study_suite.router)
 
 
 @app.on_event("startup")
